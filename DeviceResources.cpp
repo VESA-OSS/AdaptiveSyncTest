@@ -131,7 +131,10 @@ void DX::DeviceResources::CreateDeviceResources()
     };
 
     ComPtr<IDXGIAdapter1> adapter;
-    GetHardwareAdapter(adapter.GetAddressOf());
+//  GetHardwareAdapter(adapter.GetAddressOf());
+//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_MINIMUM_POWER, adapter.GetAddressOf());        // Can't find an output6/display off this device
+//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, adapter.GetAddressOf());
+    GetPreferredAdapter( DXGI_GPU_PREFERENCE_UNSPECIFIED, adapter.GetAddressOf());
 
     // Create the Direct3D 11 API device object and a corresponding context.
     ComPtr<ID3D11Device> device;
@@ -607,6 +610,40 @@ void DX::DeviceResources::GetHardwareAdapter(IDXGIAdapter1** ppAdapter)
 
     *ppAdapter = adapter.Detach();
 }
+
+// This method acquires the first available hardware adapter.
+// If no such adapter can be found, *ppAdapter will be set to nullptr.
+void DX::DeviceResources::GetPreferredAdapter( DXGI_GPU_PREFERENCE pref, IDXGIAdapter1** ppAdapter)
+{
+    *ppAdapter = nullptr;
+
+    ComPtr<IDXGIFactory6> dxgiFactory;
+    DX::ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.GetAddressOf())));
+
+    ComPtr<IDXGIAdapter1> adapter;
+    for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != dxgiFactory->EnumAdapterByGpuPreference(adapterIndex, pref, IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf())); adapterIndex++)
+    {
+        DXGI_ADAPTER_DESC1 desc;
+        adapter->GetDesc1(&desc);
+
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+        {
+            // Don't select the Basic Render Driver adapter.
+            continue;
+        }
+
+#ifdef _DEBUG
+        wchar_t buff[256] = {};
+        swprintf_s(buff, L"Direct3D Adapter (%u): VID:%04X, PID:%04X - %ls\n", adapterIndex, desc.VendorId, desc.DeviceId, desc.Description);
+        OutputDebugStringW(buff);
+#endif
+
+        break;
+    }
+
+    *ppAdapter = adapter.Detach();
+}
+
 // Updates the (primarily Direct2D) DPI-dependent measurements.
 void DX::DeviceResources::UpdateLogicalSize(RECT outputSize, float dpi)
 {

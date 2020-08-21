@@ -12,8 +12,8 @@
 #pragma once
 
 #include "DeviceResources.h"
-#include "StepTimer.h"
 #include "Basicmath.h"
+#include "Sensor.h"
 #include <map>
 
 struct rawOutputDesc
@@ -53,10 +53,10 @@ private:
     };
 
     // each test indexes into these arrays using its currentRateIndex
-#define numFlickerRates 4
+#define numFlickerRates 5
 
-#define numMediaRates 11
-    float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f, 120.0f };
+#define numMediaRates 13
+    float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f, 120.0f, 180.0f, 240.0f };
 
 #define numFrameDropRates 7
     float frameDropRates[numFrameDropRates] = { 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
@@ -70,15 +70,15 @@ private:
 
     const INT32 maxMotionBlurs = 10;
 
-#define frameLogLength 10
+#define frameLogLength 11
     typedef struct frameEventStruct {
         UINT64 frameID;			    // frame counter value for this frame
         INT64 clickCounts;	    	// count when input device button was clicked
         INT64 readCounts;	    	// count when frame processing starts in app
         INT64 drawCounts;	    	// count when drawing starts (GPU rendering)
-        INT64 presentCounts;   	// count when app is done with rendering -Present() is called
-        INT64 syncCounts;	    	// count when GPU video system starts sending this image aka time of the Flip
-        INT64 photonCounts;		// count at point when photons appeared to photocell
+        INT64 presentCounts;   	    // count when app is done with rendering -Present() is called
+        INT64 syncCounts;	    	// count when GPU video system starts sending this image aka time of the Flip/Sync
+        INT64 photonCounts;		    // count at point when photons detected by sensor
     } FrameEvents;
 
     FrameEvents *m_frameLog[frameLogLength];            // array of pointers to event structs
@@ -108,7 +108,7 @@ public:
 	enum class TestPattern
 	{
 		StartOfTest,                // Must always be first.
-		ConnectionProperties,       //      Can we set resolution of fullscreen mode here?
+		ConnectionProperties,       //  0   Can we set resolution of fullscreen mode here?
 		PanelCharacteristics,       //  1   report limits of frame rate possible at this resolution
 		ResetInstructions,
         FlickerConstant,            //  2   MinHz, MaxHz, 60Hz, and 24/48Hz
@@ -117,8 +117,10 @@ public:
         GrayToGray,                 //  5   Scene to measure gray-to-gray response time
         FrameDrop,                  //  6   Draw the animated square. 60:10x6, 90:10x9, 120:12x10, 180:15x12, 240:16x15, 
         FrameLock,                  //  7   Select from 23.976, 24, 25, 29.97, 30, 47.952, 48, 50, 59.94, 60Hz -Media Jitter test
+        EndOfMandatoryTests,        // 
         MotionBlur,                 //  8   Demonstrate correct motion blur vs panel exposure time (frameFraction)
         GameJudder,                 //  9   VRR scrolling image to minimize display duration per game needs (BFI)
+        Tearing,                    //      Test pattern to show off tearing artifacts at rates outside the valid range.
         EndOfTest,                  // Must always be last.
         WarmUp,                     //  W
         Cooldown,                   // 'C'   on C hotkey
@@ -129,6 +131,7 @@ public:
 
     // Basic game loop
     void Tick();
+    void TickOld();
 
     // IDeviceNotify
     virtual void OnDeviceLost() override;
@@ -153,6 +156,8 @@ public:
     void ChangeG2GToIndex(bool increment);
     void StartTestPattern(void);
     void TogglePause(void);
+    void ToggleSensing(void);
+    void ResetCurrentStats(void);                     // reset whichever stats are currently in use
 
     void ChangeGradientColor(float deltaR, float deltaG, float deltaB);
     void ChangeBackBufferFormat(DXGI_FORMAT fmt);
@@ -179,8 +184,12 @@ private:
     TestingTier GetTestingTier();
     WCHAR *GetTierName(TestingTier tier);
 	float GetTierLuminance(Game::TestingTier tier);
+    bool isMedia();                                             // whether this test uses media fixed rates or game dynamic rates
     void RotateFrameLog();                                      // Shuffle entries down to make room
     float GrayToGrayNits(INT32 index);
+
+    void ResetSensorStats(void);
+    void ResetFrameStats(void);
 
     // float ComputeGamutArea( float2 r, float2 g, float2 b );
     // float ComputeGamutCoverage( float2 r1, float2 g1, float2 b1, float2 r2, float2 g2, float2 b2 );
@@ -196,8 +205,10 @@ private:
 	void GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx);                      // 5
     void GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx);                       // 6
     void GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx);                       // 7
-    void GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx);						// 9
-    void GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx);                      // 8
+    void GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx);
+    void GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx);						// 8
+    void GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx);                      // 9
+    void GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx);                         // T
     void GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx);
     void GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx);                          // W
     void GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx);                        // C
@@ -244,9 +255,16 @@ private:
     INT32                       m_modeHeight;
 
     LARGE_INTEGER               m_qpcFrequency;             // clock frequency on this PC
-    INT64                       m_lastStartCounts;          // qpc counts from when we started working on last frame
+    INT64                       m_lastReadCounts;          // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // ms simulate workload of app (just used for some tests)
     double                      m_frameTime;                // total time since last frame start in seconds
+    double                      m_lastFrameTime;            // save from one frame ago
+    INT32                       m_frameCount;               // number of frames in average
+    double                      m_totalFrameTime;           // for average frame time
+    double                      m_totalRenderTime;          // for average Render time
+    double                      m_totalPresentTime;         // for average Present time
+    double                      m_avgInputTime;             // hard-coded until dongle drives input
+
     double                      m_totalTimeSinceStart;      // not sure if I need this?
     double                      m_testTimeRemainingSec;     // how long current test has been running in seconds
     uint64_t                    m_frameCounter;             // how many frames rendered in app
@@ -262,14 +280,27 @@ private:
     bool                        m_squareWave;               // zigzag if false
     bool                        m_waveUp;                   // zig up or down
     INT32                       m_latencyRateIndex;         // select frame rate in frame latency test          4
+    bool                        m_sensorConnected;          // connection to the photocell dongle is live       4
+    bool                        m_sensing;                  // whether we are running the sensor                4
+    bool                        m_flash;                    // whether we are flashing the photocell this frame 4
+    double                      m_minSensorTime;            // min value of end-to-end lag measured             4
+    double                      m_maxSensorTime;            // max value of end-to-end lag measured             4
+    INT32                       m_sensorCount;              // number of valid latency samples since reset      4
+    double                      m_totalSensorTime;          // sum of end-to-end lag. Used to compute average   4
+    double                      m_totalSensorTime2;         // sum of squares. Used to compute variance         4
+    double                      m_avgSensorTime;            // end-to-end lag -averaged during sensing          4
+
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
+
     INT32                       m_frameDropRateIndex;       // select frame rate in frame drop test             6
     INT32                       m_frameLockRateIndex;       // select frame rate in frame lock test             7
     INT32                       m_mediaRateIndex;           // ??
     float                       m_fAngle;                   // angle where moving object is at                  8
     INT32                       m_MotionBlurIndex;          // counter for frame fraction                       8
 //  bool                        m_bMotionBlur;              // whether Motion Blur is on                        8
+
+    float                       m_sweepPos;                 // position of bar in tearing test (pixels)         0
 
     INT32						m_currentProfileTile;
 	UINT32						m_maxPQCode;		        // PQ code of maxLuminance

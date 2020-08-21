@@ -286,6 +286,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         game->OnDisplayChange();
         break;
 
+// Handle keyboard inputs;
+// https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
     case WM_KEYUP:
         switch (wParam)
         {
@@ -328,14 +330,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ToggleFullscreen(hWnd);
             }
             break;
-        case 0x43:                                                        // 'c'
+        case 0x43:                                                        // 'C'
             game->SetTestPattern(Game::TestPattern::Cooldown);
             break;
-        case 0x57:                                                        // 'w'
+        case 0x52:                                                        // 'R'
+            game->ResetCurrentStats();
+            break;
+        case 0x53:                                                        // 'S'
+            game->ToggleSensing();
+            break;
+        case 0x57:                                                        // 'W'
             game->SetTestPattern(Game::TestPattern::WarmUp);
             break;
         case VK_PAUSE:
-        case 0x50:                                                        // 'p'
+        case 0x50:                                                        // 'P'
             game->TogglePause();
             break;
         case 0x31:                                                        // '1'
@@ -365,9 +373,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case 0x39:                                                        // '9'
 			game->SetTestPattern(Game::TestPattern::GameJudder);
 			break;
-//		case 0x30:                                                        // '0'
-//			game->SetTestPattern(Game::TestPattern::Tearing);
-			break;
+        case 0x54:                                                        // '0'
+		case 0x30:                                                        // 'T'
+            game->SetTestPattern(Game::TestPattern::Tearing);
+            break;
 
         default:
             break;

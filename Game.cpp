@@ -61,18 +61,29 @@ void Game::ConstructorInternal()
     m_waveUp = true;
     m_squareWave = false;       // bool to select square vs zigzag       TODO make this an enum so we can have sinewave too
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
-    m_mediaRateIndex   = 0;		// select between 60, 90, 120, 180, 240Hz for Jitter test
+    m_mediaRateIndex   = 0;		// select between 60, 90, 120, 180, 240Hz for Jitter
+
+    m_sensorConnected = false;  //
+    m_sensing = false;          // 
+    m_flash = false;            // whether we are flashing the photocell this frame                 4
+    ResetSensorStats();         // initialize the sensor tracking data                              4
+    ResetFrameStats();          // initialize the frame timing data
+    m_avgInputTime = 0.006;     // hard coded at 6ms until dongle can drive input
+
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
     m_frameDropRateIndex = 0;   // select subtest for frameDrop test                                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
     m_fAngle = 0;               // angle of object moving around screen                             8,9
     m_MotionBlurIndex = maxMotionBlurs;  // start with frame fraction 100%                          8
+    m_sweepPos = 0;             // position of bar in Tearing test                                  0
 
     m_targetFrameRate = 60.f;
 
-    m_sleepDelay = 10.0f;
-    m_frameTime  = 0.f;
+    m_sleepDelay = 10.0;
+    m_frameTime  = 0.0;
+    m_totalFrameTime = 0.0;     // accumulator for average
+    m_frameCount = 0;
     m_frameCounter = 0;         // frames since start of app execution
     m_totalTimeSinceStart = 0;  // init clock since app start
     m_paused = 0;               // start out unpaused
@@ -131,13 +142,52 @@ void Game::Initialize(HWND window, int width, int height)
     CreateDeviceDependentResources();
     CreateWindowSizeDependentResources();
 
-//	m_timer.SetFixedTimeStep(true);
-//	m_timer.SetTargetElapsedSeconds(1.0 / 120.f);
 }
 
 void Game::TogglePause()
 {
     m_paused = !m_paused;
+}
+
+// turn on or off use of the sensor dongle
+void Game::ToggleSensing()
+{
+    m_sensing = !m_sensing;
+}
+
+// clear all the stat tracking from the sensor
+void Game::ResetSensorStats()
+{
+    m_sensorCount = 0;
+    m_totalSensorTime  = 0.;
+    m_totalSensorTime2 = 0.;
+    m_minSensorTime = 0.999999;
+    m_maxSensorTime = 0.;
+    m_avgSensorTime = 0.;
+}
+
+void Game::ResetFrameStats()
+{
+    m_frameCount = 0;
+
+    m_totalFrameTime = 0.;             // clear accumulator
+//  m_totalFrameTime2 = 0.;            // square of above used for variance math
+//  m_minFrameTime = 0.999999;
+//  m_maxFrameTime = 0.;
+
+    m_totalRenderTime = 0.;
+
+    m_totalPresentTime = 0.;
+
+}
+
+// clears the accumulators for the current mode  -bound to 's' key
+void Game::ResetCurrentStats()
+{
+    if ( m_sensing )
+        ResetSensorStats();
+    else
+        ResetFrameStats();
 }
 
 // Returns whether the reported display metadata consists of
@@ -285,13 +335,218 @@ INT64 getPerfCounts(void)
     return time.QuadPart;
 }
 
+bool Game::isMedia()
+{
+    switch (m_currentTest)
+    {
+        // cases where a media oriented fixed-frame rate is best
+        case TestPattern::FlickerConstant:      //  2
+        case TestPattern::FrameDrop:            //  6 
+        case TestPattern::FrameLock:            //  7
+        case TestPattern::MotionBlur:           //  8
+            return true;
+
+        // cases where a game-oriented adaptive frame rate is best
+        case TestPattern::FlickerVariable:      //  3 
+        case TestPattern::DisplayLatency:       //  4
+        case TestPattern::GrayToGray:           //  5   
+        case TestPattern::GameJudder:           //  9
+        case TestPattern::Tearing:              //  0
+            return false;
+
+        default:
+            return false;
+
+    }
+}
+
+// Tick method for use with photocell sensor
 void Game::Tick()
 {
     double frameTime;                               // local variable for comparison
-    UINT64 startCounts = getPerfCounts();           // for tracking total running time with m_lastStartCounts
+    Sensor sensor;                                  // external photocell devicep
+    double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
 
     // Update with data from last frame
-    // get sync time of last frame
+    // get sync time of last frame from swapchain
+    auto sc = m_deviceResources->GetSwapChain();
+    DXGI_FRAME_STATISTICS frameStats;
+    sc->GetFrameStatistics(&frameStats);
+    m_frameLog[1]->syncCounts = frameStats.SyncQPCTime.QuadPart;
+    // this is from 2 frames ago since we havent rotated yet
+
+    // set photon time to be a bit after sync time until we have hardware event
+    m_frameLog[0]->photonCounts = m_frameLog[0]->syncCounts + 100000;   // assume 10ms of GtG, etc.
+
+    m_frameCounter++;                                       // new frame id
+
+    if (!m_paused)
+    {
+        if (m_sensing)
+        {
+            m_flash = m_frameCounter & 1;                        // switch every other frame
+
+            // if there should be a flash this frame, reconnect the sensor (should not be required every frame)
+            if (m_flash)
+            {
+#if 1
+                m_sensorConnected = sensor.ConnectSensor();
+#else
+                if  ( !m_sensorConnected )
+                {
+                    m_sensorConnected = sensor.ConnectSensor();
+                }
+//              Sleep(100);
+#endif
+            }
+
+            // advance to current frame
+            RotateFrameLog();                                    // make room to store this latest data
+
+//          m_frameLog[0]->frameID = m_frameCounter;             // log the frame ID
+
+            // log time when app starts a frame
+            m_frameLog[0]->readCounts = getPerfCounts();
+
+            // Don't bother to sleep during sensing
+            // model app workload by sleeping that many ms
+//          mySleep(sleepDelay);
+            Update();                                       // actually do some CPU stuff
+
+            // log when drawing starts on the GPU
+//          m_frameLog[0]->drawCounts = getPerfCounts();
+
+            // Draw
+            Render();                                       // this is before we have all values for this frame
+
+            // if there should be a flash this frame, start measuring.
+            if (m_flash)
+                sensor.StartLatencyMeasurement(LatencyType_AutoClick);
+
+            // Show the new frame
+            m_deviceResources->Present();
+
+            // log time when app calls Present()
+            m_frameLog[0]->presentCounts = getPerfCounts();
+
+            // if this was a frame that included a flash, then read the photocell's measurement
+            if (m_flash)
+            {
+                float sensorTime = 0.f;                             // time from sensor in seconds
+                sensorTime = sensor.ReadLatency();                  // blocking call
+
+                if ((sensorTime > 0.001) && (sensorTime < 0.100))     // if valid, run the stats on it
+                {
+                    // total it up for computing the average and variance
+                    m_totalSensorTime += sensorTime;
+                    m_totalSensorTime2 += sensorTime * sensorTime;
+                    m_sensorCount++;
+
+                    // scan for min
+                    if (sensorTime < m_minSensorTime)
+                        m_minSensorTime = sensorTime;
+
+                    // scan for max
+                    if (sensorTime > m_maxSensorTime)
+                        m_maxSensorTime = sensorTime;
+                }
+            }
+        }
+        else      // we are not using the sensor, just track in-PC timings
+        {
+        //  m_flash =  m_frameCounter & 1;                          // switch every other frame
+        //  m_flash = (m_frameCounter >> 1) & 1;                    // switch every 2 frames
+            m_flash = (m_frameCounter >> 2) & 1;                    // switch every 4 frames
+
+            // advance to current frame
+            RotateFrameLog();                                    // make room to store this latest data
+
+            m_frameLog[0]->frameID = m_frameCounter;             // log the frame ID
+
+            // Read input events()
+            // log time when the button was clicked -extract the click time stamp
+            // log time when photocell was hit -extract the photon time stamp
+            // log time when the camera image flashed -extract the camera result time stamp
+
+            // log time when app starts a frame
+            m_frameLog[0]->readCounts = getPerfCounts();
+
+            // simulate input device click that occurred before we read it.
+            INT64 inputCounts = m_avgInputTime * dFrequency;    
+            m_frameLog[0]->clickCounts = m_frameLog[0]->readCounts - inputCounts;
+
+            double sleepDelay = (1000.0 / m_targetFrameRate) - 1.3;    // assume 1.3ms of GPU workload
+            if (m_currentTest == TestPattern::DisplayLatency)
+                sleepDelay = 8.0;     // 8ms hard coded to give game-like workload
+
+            // model app workload by sleeping that many ms
+            mySleep(sleepDelay);
+            Update();                                       // actually do some CPU stuff
+
+            // log when drawing starts on the GPU
+            m_frameLog[0]->drawCounts = getPerfCounts();
+            // Draw()
+            Render();                                       // update screen (before we have all values for this frame)
+
+            // log time when app calls Present()
+            m_frameLog[0]->presentCounts = getPerfCounts();
+            // Show the new frame
+            m_deviceResources->Present();
+
+
+            // log time when vsync happens on display
+    //      m_frameLog[0]->syncCounts = presentCounts;      // clear this as we don't know until next frame
+
+            // log time when photons arrive at photocell
+    //      m_frameLog[0]->photonCounts = presentCounts;    // clear this as we don't know until next frame
+
+// track frame time for frame rate
+            m_lastFrameTime = m_frameTime;
+            m_frameTime = (m_frameLog[0]->readCounts - m_lastReadCounts) / dFrequency;
+
+            m_lastReadCounts = m_frameLog[0]->readCounts;
+
+            // if valid data
+            if ((m_frameTime > 0.001) && (m_frameTime < 0.100))     // run the stats on it
+            {
+                m_frameCount++;                                     // frames we average over
+
+                // accumulate time for computing the average
+                m_totalFrameTime += m_frameTime;
+#if 0
+                // scan for min
+                if (m_frameTime < m_minLatency)
+                    m_minLatency = m_frameTime;
+
+                // scan for max
+                if (m_frameTime > m_maxLatency)
+                    m_maxLatency = m_frameTime;
+#endif
+                // accumulate Render time for computing Average
+                double renderTime = (m_frameLog[0]->presentCounts - m_frameLog[0]->drawCounts) / dFrequency;
+                m_totalRenderTime += renderTime;
+
+                // accumulate Present time for computing Average
+                double presentTime = (m_frameLog[2]->syncCounts - m_frameLog[2]->presentCounts) / dFrequency;
+                m_totalPresentTime += presentTime;
+
+            }
+        }
+    }
+    else
+        Sleep( 15 );                                      // update at ~30Hz even when paused.
+                 // save for use next frame
+
+    // track data since app startup
+    m_totalTimeSinceStart += m_frameTime;       // TODO totalTime should not be a double but a uint64 in microseconds
+}
+
+void Game::TickOld()
+{
+    double frameTime;                               // local variable for comparison
+
+    // Update with data from last frame
+    // get sync time of last frame from swapchain
     auto sc = m_deviceResources->GetSwapChain();
     DXGI_FRAME_STATISTICS frameStats;
     sc->GetFrameStatistics(&frameStats);
@@ -300,7 +555,11 @@ void Game::Tick()
     // set photon time to be a bit after sync time until we have hardware event
     m_frameLog[0]->photonCounts = m_frameLog[0]->syncCounts + 100000;   // assume 10ms of GtG, etc.
 
-    m_frameCounter++;             // new frame
+    m_frameCounter++;                                       // new frame id
+
+//  m_flash =  m_frameCounter & 1;                          // switch every other frame
+//  m_flash = (m_frameCounter >> 1) & 1;                    // switch every 2 frames
+    m_flash = (m_frameCounter >> 2) & 1;                    // switch every 4 frames
 
     if (!m_paused)
     {
@@ -320,16 +579,18 @@ void Game::Tick()
         // simulate input device click occurred 10ms before we read it.
         m_frameLog[0]->clickCounts = m_frameLog[0]->readCounts - 100000; // assume 10ms of USB stack latency
 
-
         double sleepDelay = (1000.0 / m_targetFrameRate) - 1.3;    // assume 1.3ms of GPU workload
 
         // model app workload by sleeping that many ms
-        mySleep( sleepDelay );
+        mySleep(sleepDelay);
         Update();                                       // actually do some CPU stuff
 
         // log when drawing starts on the GPU
         m_frameLog[0]->drawCounts = getPerfCounts();
         Render();                                       // update screen (before we have all values for this frame)
+
+        // Show the new frame.
+        m_deviceResources->Present();
 
         // log time when app calls Present()
         m_frameLog[0]->presentCounts = getPerfCounts();
@@ -341,13 +602,13 @@ void Game::Tick()
 //      m_frameLog[0]->photonCounts = presentCounts;    // clear this as we don't know until next frame
     }
     else
-        Sleep(15);                                      // update at ~60Hz even when paused.
+        Sleep( 15 );                                    // update at ~60Hz even when paused.
 
     double dFrequency = m_qpcFrequency.QuadPart;        // counts per second of QPC
 
-                                                        // keep total time running even when paused:
-    m_frameTime = (startCounts - m_lastStartCounts) / dFrequency;
-    m_lastStartCounts = startCounts;                    // save for use next frame
+    // Compute current frame time since last frame
+    m_frameTime = (m_frameLog[0]->readCounts - m_lastReadCounts) / dFrequency;
+    m_lastReadCounts = m_frameLog[0]->readCounts;       // save for use next frame
 
     // track data since app startup
     m_totalTimeSinceStart += m_frameTime;       // TODO totalTime should not be a double but a uint64 in microseconds
@@ -509,6 +770,7 @@ void Game::ChangeG2GToIndex(bool increment)
 
 }
 
+// handle the up/down arrow key inputs
 void Game::ChangeSubtest(bool increment)
 {
     int testTier;
@@ -622,6 +884,20 @@ void Game::ChangeSubtest(bool increment)
         break;
         m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
     }
+
+    case TestPattern::Tearing:                                                                  // 0
+    {
+        if (increment)
+        {
+            m_sleepDelay--;
+        }
+        else
+        {
+            m_sleepDelay++;
+        }
+        break;
+        m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
+    }
     break;
 
     }
@@ -642,7 +918,7 @@ void Game::UpdateDxgiColorimetryInfo()
     ComPtr<IDXGIFactory4> dxgiFactory;
     DX::ThrowIfFailed(dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory)));
 
-//    if (!dxgiFactory->IsCurrent())
+//  if (!dxgiFactory->IsCurrent())
     {
         DX::ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)));
     }
@@ -703,10 +979,8 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     auto fmt = m_deviceResources->GetBackBufferFormat();
     std::wstringstream text;
 
-    if (m_newTestSelected) SetMetadataNeutral();
-
     text << m_appTitle;
-    text << L"\n\nVersion 0.40\n\n";
+    text << L"\n\nVersion 0.60\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -756,8 +1030,6 @@ bool Game::CheckHDR_On()
 
 void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
 {
-    if (m_newTestSelected) SetMetadataNeutral();
-
     std::wstringstream text;
 
     text << L"\nConnection to: ";
@@ -838,9 +1110,18 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
 
     IDXGISwapChainMedia *scMedia;
     DX::ThrowIfFailed(sc->QueryInterface(IID_PPV_ARGS(&scMedia)));
+    UINT desiredPresentDuration = 166667;       //  60Hz
 
-//  UINT desiredPresentDuration = 166667;       //  60Hz
-    UINT desiredPresentDuration =  83333;       // 120Hz
+    desiredPresentDuration = 166667;       //  60Hz
+    desiredPresentDuration =  83333;       // 120Hz
+    desiredPresentDuration =  83333;       // 120Hz
+    desiredPresentDuration =  83333;       // 120Hz
+    desiredPresentDuration =  55555;       // 180Hz
+    desiredPresentDuration =  41667;       // 240Hz
+    desiredPresentDuration =  33333;       // 300Hz
+    desiredPresentDuration =  27777;       // 360Hz
+    desiredPresentDuration =  69444;       // 144Hz
+
     UINT closestSmallerPresentDuration, closestLargerPresentDuration;
     DX::ThrowIfFailed(scMedia->CheckPresentDurationSupport(desiredPresentDuration,
         &closestSmallerPresentDuration, &closestLargerPresentDuration ));
@@ -864,50 +1145,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
     text << setw(10) << setprecision(4) << rate << "Hz  ";
     text << setw(10) << setprecision(4) << duration << "ms\n";
 
-/*
-	if ( HDR_On )
-	{
-		text << L"\n\nSupported PQ Values - ";
-		text << L"\nMax Effective Value: ";
-		text << std::to_wstring((int)m_maxEffectivePQValue);
-		text << L" (";
-		text << std::to_wstring(Remove2084(m_maxEffectivePQValue/1023.0f)*10000.0f);
-		text << L" nits)";
 
-		text << L"\nMax FullFrame Value: ";
-		text << std::to_wstring((int)m_maxFullFramePQValue);
-		text << L" (";
-		text << std::to_wstring(Remove2084(m_maxFullFramePQValue / 1023.0f)*10000.0f);
-		text << L" nits)";
-
-		text << L"\nMin Effective Value: ";
-		text << std::to_wstring((int)m_minEffectivePQValue);
-		text << L" (  ";
-		text << std::to_wstring(Remove2084(m_minEffectivePQValue/1023.0f)*10000.0f);
-		text << L" nits)";
-	}
-	else
-	{
-		text << L"\n\nSupported sRGB Values - ";
-		text << L"\nMax Effective Value: ";
-		text << std::to_wstring((int)m_maxEffectivesRGBValue);
-		text << L" (";
-		text << std::to_wstring(RemoveSRGBCurve(m_maxEffectivesRGBValue/255.0f)*80.0f);
-		text << L" nits)";
-
-		text << L"\nMax FullFrame Value: ";
-		text << std::to_wstring((int)m_maxFullFramesRGBValue);
-		text << L" (";
-		text << std::to_wstring(RemoveSRGBCurve(m_maxFullFramesRGBValue/255.0f)*80.0f);
-		text << L" nits)";
-
-		text << L"\nMin Effective Value: ";
-		text << std::to_wstring((int)m_minEffectivesRGBValue);
-		text << L" (  ";
-		text << std::to_wstring(RemoveSRGBCurve(m_minEffectivesRGBValue/255.0f)*80.0f);
-		text << L" nits)";
-	}
-*/
     RenderText(ctx, m_monospaceFormat.Get(), text.str(), m_largeTextRect);
 
     if (m_showExplanatoryText)
@@ -921,8 +1159,6 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
 
 void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)           //                  1
 {
-    if (m_newTestSelected) SetMetadataNeutral();
-
     std::wstringstream text;
 	text << fixed << setw(9) << setprecision(2);
 
@@ -1021,8 +1257,6 @@ void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)   
     {
         std::wstring title = L"Reported Panel Characteristics\n" + m_hideTextString;
         RenderText(ctx, m_largeFormat.Get(), title, m_testTitleRect);
-
-		PrintMetadata(ctx);
 	}
 
     m_newTestSelected = false;
@@ -1075,8 +1309,6 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 	if (m_newTestSelected)
 	{
 
-		SetMetadataNeutral();
-
 // This works but we don't know what to set it to.
 // So it is commented out until we do
 //		setBrightnessSliderPercent(33);
@@ -1126,18 +1358,22 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
     switch (m_flickerRateIndex)
     {
     case 0:
-        refreshRate = 30.0f;        // min reported by implementation       // TODO use actual min/max if panel supports
+        refreshRate = 24.0f;        // min reported by implementation       // TODO use actual min/max if panel supports
         break;
 
     case 1:
-        refreshRate = 120.0f;       // max reported by implementation       // TODO use actual min/max if panel supports
+        refreshRate = 30.0f;        // min reported by implementation       // TODO use actual min/max if panel supports
         break;
 
     case 2:
-        refreshRate =  60.0f;       // hard coded at 60Hz
+        refreshRate = 120.0f;       // max reported by implementation       // TODO use actual min/max if panel supports
         break;
 
     case 3:
+        refreshRate =  60.0f;       // hard coded at 60Hz
+        break;
+
+    case 4:
         refreshRate =  48.0f;       // 24 if supported, else 48.            // TODO use actual 24Hz if panel supports
         break;
 
@@ -1170,13 +1406,11 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
 			title << L"  Nits: ";
 			title << sRGBval;
 		}
-
+        title << L"\nAdjust brightness to 10nits before testing";
 		title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-		PrintMetadata(ctx);
 	}
 
 	m_newTestSelected = false;
@@ -1230,33 +1464,20 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-		PrintMetadata(ctx);
 	}
 
 	m_newTestSelected = false;
 
 }
-/* 
-   #  #
-   #  #
-   #####
-      #
-      #
-*/
+
 void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ************************************* 4
 {
-    float nits = 100;
-    float avg = nits * 0.1f;								// 10% screen area
-    if (m_newTestSelected) {
-		SetMetadata(nits, avg, GAMUT_Native);
-	}
 
 //  float refreshRate = 120.0f;
-//  m_sleepDelay = 1.3;  // ms
+    m_sleepDelay = 0.0;  // ms
 
     // fill the screen background with 100 nits white
-    float c = nitstoCCCS(nits);
+    float c = nitstoCCCS( 100 );
     ComPtr<ID2D1SolidColorBrush> backgroundBrush;
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &backgroundBrush));
     auto logSize = m_deviceResources->GetLogicalSize();
@@ -1286,113 +1507,176 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 		fRad, fRad
 	};
 
-    if ((m_frameCounter >> 2) & 1)                                // every 4 frames
-    {
-        ctx->FillRectangle(&tenPercentRect, whiteBrush.Get());
-        ctx->FillEllipse(&ellipse, m_blackBrush.Get());
-    }
-    else
+    if ( m_flash )                                // if we want to flash the photocell
     {
         ctx->FillRectangle(&tenPercentRect, m_blackBrush.Get());
         ctx->FillEllipse(&ellipse, whiteBrush.Get());
+    }
+    else
+    {
+        ctx->FillRectangle(&tenPercentRect, whiteBrush.Get());
+        ctx->FillEllipse(&ellipse, m_blackBrush.Get());
     }
 
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
-		title << fixed << setw(8) << setprecision(2);
+
         title << L"4 Display Latency Measurement\n";
-        title << fixed << setw(10) << setprecision(3);
-//      title << "Selected: " << refreshRate << L"fps  " << 1.0f / refreshRate * 1000.f << L"ms\n";
-//      title << "Selected: " << L"Maximumfps\n";
-        title << "Current:  " << fixed << setw(11) << setprecision(3);
-        title << 1.0 / m_frameTime << L"fps  ";
-        title << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
 
-        title << L"\nSelect app work time using Up/Down arrows";
-
-        int numCols = 4;
-        assert(numCols <= frameLogLength);
-
-        double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
-
-        // Display frame id counter
-        title << "\nFrame:     ";
-        for (int i = numCols - 1; i >= 0; i--)
+        if ( m_sensing )
         {
-            title << setw(10) << m_frameLog[i]->frameID;
+            // print number of samples we are taking per second
+            double frameTime = (m_frameTime + m_lastFrameTime)*0.5;
+            title << "Current:" << fixed << setw(11) << setprecision(3);
+            title << 1.0 / frameTime << L"fps  ";
+            title << setprecision(5) << frameTime * 1000.f << L"ms\n";
+
+            int count = m_sensorCount;
+            if (count <= 0) count = 1;
+            double avgSensorTime = m_totalSensorTime / count;
+            double variance = sqrt(count * m_totalSensorTime2 - m_totalSensorTime * m_totalSensorTime) / count;
+
+            if (m_sensorConnected)
+            {
+                // print total end-to-end latency stats from sensor
+                title << " S E N S I N G . . .\n";
+                title << "Over last " << m_sensorCount << " samples\n";
+                title << "Average:   " << setprecision(3) << setw(7);
+                title << avgSensorTime * 1000.0;
+                title << "ms\n";
+                title << "Min:" << setprecision(3) << setw(7);
+                title << m_minSensorTime * 1000.0;
+                title << "  Max:" << setprecision(3) << setw(7);
+                title << m_maxSensorTime * 1000.0;
+                title << "  Var:" << setprecision(3) << setw(6);
+                title << variance * 1000.0;
+            }
+            else
+                title << "\n    Please Attach a photocell sensor.\n";
+        }
+        else
+        {
+            //      title << "Selected: " << refreshRate << L"fps  " << 1.0f / refreshRate * 1000.f << L"ms\n";
+            //      title << "Selected: " << L"Maximumfps\n";
+            title << "Current:  " << fixed << setw(11) << setprecision(3);
+            title << 1.0 / m_frameTime << L"fps  ";
+            title << setprecision(5) << m_frameTime * 1000.f << L"ms";
+
+            int numCols = 7;
+            assert(numCols <= frameLogLength);
+
+            double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
+
+            // Display frame id counter
+            title << "\nFrame ID:  ";
+            for (int i = numCols - 1; i >= 0; i--)
+            {
+                title << setw(8) << m_frameLog[i]->frameID;
+            }
+            // show number of frames average is over
+            title << setw(8) << m_frameCount;
+//          title << "Average of " << m_frameCount << " frames: " << fixed << setprecision(3);
+
+            // Print entire loop end-to-end intervals
+            title << "\nFrame Time:" << setprecision(3);
+            double avgFrameTime = m_totalFrameTime / m_frameCount;
+            for (int i = numCols - 1; i > 0; i--)
+            {
+                double time = (m_frameLog[i - 1]->readCounts - m_frameLog[i]->readCounts) / dFrequency;
+                title << setw(8) << time * 1000.0f;
+            }
+            title << "        " << setprecision(3) << setw(8) << avgFrameTime * 1000.;
+            //          title  << 1.0 / m_avgFrameTime << L"fps  ";
+
+#if 0
+            title << "\nSync2Sync: " << setprecision(3);
+            for (int i = numCols - 1; i > 0; i--)
+            {
+                double time = (m_frameLog[i - 1]->syncCounts - m_frameLog[i]->syncCounts) / dFrequency;
+                title << setw(10) << time * 1000.0f;
+            }
+#endif
+
+            // Print time spent in Input Stack
+            title << "\nInput lag: " << setprecision(3);
+            for (int i = numCols - 1; i >= 0; i--)
+            {
+                double time = (m_frameLog[i]->readCounts - m_frameLog[i]->clickCounts) / dFrequency;
+                title << setw(8) << time * 1000.0f;
+            }
+
+            // Print time spent in App CPU code
+            title << "\nApp work:  " << setprecision(3);
+            for (int i = numCols - 1; i >= 0; i--)
+            {
+                double time = (m_frameLog[i]->drawCounts - m_frameLog[i]->readCounts) / dFrequency;
+                title << setw(8) << time * 1000.0f;
+            }
+
+            // Print time to render on GPU
+            title << "\nRender:    " << setprecision(3);
+            for (int i = numCols - 1; i >= 1; i--)
+            {
+                double time = (m_frameLog[i]->presentCounts - m_frameLog[i]->drawCounts) / dFrequency;
+                title << setw(8) << time * 1000.0f;
+            }
+            title << "        " << setprecision(3) << setw(8) << m_totalRenderTime/m_frameCount * 1000.f;
+
+
+            // Print time to finalize image and flip -time from Present() to Vsync
+            title << "\nPresent:   " << setprecision(3);
+            for (int i = numCols - 1; i >= 2; i--)
+            {
+                double time = (m_frameLog[i]->syncCounts - m_frameLog[i]->presentCounts) / dFrequency;
+                title << setw(8) << time * 1000.0f;
+            }
+            title << "                " << setprecision(3) << setw(8) << m_totalPresentTime/m_frameCount * 1000.f;
+
+            // Compute Display Latency
+            double avgSensorTime = m_totalSensorTime / m_sensorCount;
+            double avgPresentTime = m_totalPresentTime / m_frameCount;
+            double avgDisplayTime = avgSensorTime - avgPresentTime;
+
+            title << "\nDisplay:   " << setprecision(3);
+            title << setw(8) << avgDisplayTime * 1000.0f;
+            title << "ms or " << setprecision(3);
+            title << setw(6) << avgDisplayTime / avgFrameTime;
+            title << " frames";
+
+            // print out total e2e experience latency
+            double e2eTime = m_avgInputTime + avgFrameTime + avgPresentTime + avgDisplayTime;
+            title << "\nTotal E2E: " << setprecision(3);
+            title << setw(8) << e2eTime * 1000.0f;
+            title << "ms or " << setprecision(3);
+            title << setw(6) << e2eTime / avgFrameTime;
+            title << " frames";
+
+#if 0
+            // print the running average of frame times
+            title << "Average of last 9 frames: " << setprecision(3) << setw(9);
+            uint count = 0;
+            double avgTime = 0.0;
+            for (int i = frameLogLength - 1; i >= 1; i--)
+            {
+                double time = (m_frameLog[i]->photonCounts - m_frameLog[i]->clickCounts) / dFrequency;
+                if (time < 0.10)
+                {
+                    avgTime += time;
+                    count++;
+                }
+            }
+            title << avgTime / count * 1000.0f;
+#endif
+
         }
 
-        // Print entire loop end-to-end intervals
-        title << "\nRead2Read: " << setprecision(3);
-        for (int i = numCols - 1; i > 0; i--)
-        {
-            double time = (m_frameLog[i-1]->readCounts - m_frameLog[i]->readCounts) / dFrequency;
-            title << setw(10) << time * 1000.0f;
-        }
-
-        title << "\nSync2Sync: " << setprecision(3);
-        for (int i = numCols - 1; i > 0; i--)
-        {
-            double time = (m_frameLog[i-1]->syncCounts - m_frameLog[i]->syncCounts) / dFrequency;
-            title << setw(10) << time * 1000.0f;
-        }
-
-        // Print time to process input
-        title << "\nInput:     " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->readCounts - m_frameLog[i]->clickCounts) / dFrequency;
-            title << setw(10) << time *1000.0f;
-        }
-
-        // Print time spent in App CPU code
-        title << "\nApp work:  " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->drawCounts - m_frameLog[i]->readCounts) / dFrequency;
-            title << setw(10) << time * 1000.0f;
-        }
-
-        // Print time to render on GPU
-        title << "\nRender:    " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->presentCounts - m_frameLog[i]->drawCounts) / dFrequency;
-            if (i == 0) time = 0.0; //--------------------------------------------------------------- not valid until next frame
-            title << setw(10) << time * 1000.0f;
-        }
-
-        // Print time to finalize image and flip -time from Present() to Vsync
-        title << "\nPresent:   " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->syncCounts - m_frameLog[i]->presentCounts) / dFrequency;
-            if (i == 0) time = 0.0; //--------------------------------------------------------------- not valid until next frame
-            title << setw(10) << time * 1000.0f;
-        }
-
-        // Print time spent inside panel from vsync to photons
-        title << "\nDisplay:   " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->photonCounts - m_frameLog[i]->syncCounts) / dFrequency;
-            title << setw(10) << time * 1000.0f;
-        }
-
-        // Print total time for end-to-end latency -from click to screen flash
-        title << "\nTotal E2E: " << setprecision(3);
-        for (int i = numCols - 1; i >= 0; i--)
-        {
-            double time = (m_frameLog[i]->photonCounts - m_frameLog[i]->clickCounts) / dFrequency;
-            title << setw(10) << time * 1000.0f;
-        }
-
+        title << "\nPress S to toggle Sensor sampling";
+        title << "\nPress R to Reset stat counters";
         title << "\n" << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
 
-//		PrintMetadata(ctx);
     }
     m_newTestSelected = false;
 
@@ -1422,8 +1706,6 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
 */  {
         float nits = 100;                   // set to background color
         float avg = nits;                   // ignore test patch area in average luminance
-        if (m_newTestSelected)
-            SetMetadata(nits, avg, GAMUT_Native);
 
         // compute brush for surround - should turn out to be 520/1023 in PQ/2084 code
         float c = nitstoCCCS(nits) / BRIGHTNESS_SLIDER_FACTOR;
@@ -1473,15 +1755,13 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
         title                 << setw(10) << setprecision(3) << 1.0f / refreshRate * 1000.f << L"ms\n";
         title << "Current:  " << setw(10) << setprecision(3) << 1.0f / m_frameTime << L"fps  ";
         title                 << setw(10) << setprecision(3) << m_frameTime * 1000.f << L"ms\n";
-        title << L"Select 'From' brightness level using ,/. keys\n";
+        title << L"Select 'From' brightness level using ,/. aka </> keys\n";
         title << L"Select 'To' brightness level using Up/Down arrows\n";
         title << "From:" << setw(8) << setprecision(2) << GrayToGrayNits(m_g2gFromIndex);
         title << "  To:" << setw(8) << setprecision(2) << GrayToGrayNits(m_g2gToIndex) << " nits\n";
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true );
-
-		PrintMetadata(ctx);
 	}
 	m_newTestSelected = false;
 
@@ -1492,8 +1772,6 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
     ComPtr<ID2D1SolidColorBrush> whiteBrush;			// brush for the "white" color
 
     float nits = m_outputDesc.MaxLuminance;             // for metadata
-    float avg = nits * 0.50f;							// half of peak
-    if (m_newTestSelected) SetMetadata(nits, avg, GAMUT_Native);
 
     float HDR10 = 150;
     nits = Remove2084(HDR10 / 1023.0f) * 10000.0f;		// "white" checker brightness
@@ -1556,7 +1834,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
     step.x = (logSize.right - logSize.left) / nCols;
     step.y = (logSize.bottom - logSize.top) / nRows;
 
-
+#ifdef DRAW_CHECKER_BACKGROUND
     for (int jRow = 0; jRow < nRows; jRow++)
     {
         for (int iCol = 0; iCol < nCols; iCol++)
@@ -1574,6 +1852,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
             }
         }
     }
+#endif
 
     // now draw the current square:
     c = 1.0f;
@@ -1604,8 +1883,6 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-        PrintMetadata(ctx);
     }
     m_newTestSelected = false;
 
@@ -1697,6 +1974,19 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
         nCols = 12;
         nRows = 10;
         break;
+
+    case 11:
+        refreshRate = 180.0f;
+        nCols = 15;
+        nRows = 12;
+        break;
+
+    case 12:
+        refreshRate = 240.0f;
+        nCols = 16;
+        nRows = 15;
+        break;
+
     }
 
     m_targetFrameRate = refreshRate;
@@ -1706,7 +1996,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
 	step.x = (logSize.right - logSize.left) / nCols;
 	step.y = (logSize.bottom - logSize.top) / nRows;
 
-
+#ifdef DRAW_CHECKER_BACKGROUND
     for (int jRow = 0; jRow < nRows; jRow++)
     {
         for (int iCol = 0; iCol < nCols; iCol++)
@@ -1724,6 +2014,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
             }
         }
     }
+#endif
 
     // now draw the current square:
     c = 1.0f;
@@ -1757,19 +2048,24 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-		PrintMetadata(ctx);
 	}
-	m_newTestSelected = false;
 
+    m_newTestSelected = false;
+
+}
+
+void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
+{
+    std::wstringstream text;
+    text << L"This is the end of mandatory test content.\n";
+    text << L"Optional/informative tests follow.";
+
+    RenderText(ctx, m_largeFormat.Get(), text.str(), m_largeTextRect);
+    m_newTestSelected = false;
 }
 
 void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // ********************** 8.
 {
-    if (m_newTestSelected) {
-        SetMetadataNeutral();
-    }
-
     float refreshRate = 60.0f;      // simulate 60Hz video on Netflix or Youtube
     m_targetFrameRate = refreshRate;
 
@@ -1783,23 +2079,6 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // *********
     // compute rotation angle of bar in degrees for D2D
     float fDeltaAngle = 360.0f * m_frameTime * 1.0f;// assume 2 revolution per second
     m_fAngle += fDeltaAngle;                        // predict next frame time from this one
-
-    // using a dot instead of a bar
-/*  float dpi = m_deviceResources->GetDpi();
-    float fRad = 0.5 * 10. / 25.4 * dpi;      // radius of dia 40mm -> inches -> dips
-    float fPathRad = min(center.x, center.y) - fRad;
-
-    center.x += fPathRad * cosf(m_fAngle);
-    center.y += fPathRad * sinf(m_fAngle);
-
-    D2D1_ELLIPSE ellipse =
-    {
-        D2D1::Point2F(center.x, center.y),
-        fRad, fRad
-    };
-
-    ctx->FillEllipse(&ellipse, m_whiteBrush.Get());
-*/
 
 #define NUM_BLUR_FRAMES 32
     int numBlurFrames = NUM_BLUR_FRAMES;
@@ -1860,9 +2139,8 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // *********
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-        PrintMetadata(ctx);
     }
+
     m_newTestSelected = false;
 
 }
@@ -1870,11 +2148,7 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // *********
 void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // ********************** 9.
 {
     float nits = 100;
-    if (m_newTestSelected) {
-        SetMetadataNeutral();
-    }
 
-    // fill the screen background with 100 nits white
     m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
 
     bool bBFI = true;
@@ -1950,12 +2224,61 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-        PrintMetadata(ctx);
     }
     m_newTestSelected = false;
 }
 
+void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ********************** 0. T.
+{
+    m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
+
+    // get window dimensions in pixels
+    auto logSize = m_deviceResources->GetLogicalSize();
+
+    // fill background
+    ctx->FillRectangle(&logSize, m_blackBrush.Get());
+
+    // compute rectangle size
+    float fHeight = (logSize.bottom - logSize.top);
+    float fWidth  = (logSize.right - logSize.left);
+
+    double duration = 0.250;                   // time to sweep L -> R across screen in seconds
+
+    // how far to move the bar each refresh:
+    double selectedFrameTime = 1.0 / m_targetFrameRate;
+    double pixPerFrame = fWidth * selectedFrameTime / duration;
+
+    // move the bar over:
+    m_sweepPos += pixPerFrame;
+    if (m_sweepPos > logSize.right)
+        m_sweepPos = 0.0;
+
+    D2D1_RECT_F tearingRect =
+    {
+        m_sweepPos, 0., m_sweepPos + pixPerFrame, fHeight
+    };
+    ctx->FillRectangle(&tearingRect, m_whiteBrush.Get());
+
+    if (m_showExplanatoryText)
+    {
+        double refreshRate = m_targetFrameRate;
+
+        std::wstringstream title;
+        title << L"0 Tearing Check";
+        title << "\nSelected: ";
+        title << fixed << setw(10) << setprecision(3);
+        title << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
+        title << "Current:  ";
+        title << fixed << setw(10) << setprecision(3);
+        title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
+
+        title << L"\nSelect frame duration using Up/Down arrows\n";
+        title << m_hideTextString;
+
+        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
+    }
+    m_newTestSelected = false;
+}
 
 float3 roundf3(float3 in)
 {
@@ -1984,7 +2307,6 @@ void Game::GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx)
 void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
 {
     float nits = 180.0f; // warm up level
-    if (m_newTestSelected) SetMetadata(nits, nits, GAMUT_Native);
     float c = nitstoCCCS(nits) / BRIGHTNESS_SLIDER_FACTOR;
 
     ComPtr<ID2D1SolidColorBrush> peakBrush;
@@ -2015,8 +2337,6 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
         }
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
-
-        PrintMetadata(ctx, true);
     }
     m_newTestSelected = false;
 }
@@ -2026,8 +2346,6 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
 // it just draws a black screen for 60seconds.
 void Game::GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx)       //              'C'
 {
-    if (m_newTestSelected) SetMetadataNeutral();
-
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
@@ -2049,8 +2367,6 @@ void Game::GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx)       //      
         }
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
-
-        PrintMetadata(ctx);
     }
     m_newTestSelected = false;
 
@@ -2105,11 +2421,17 @@ void Game::Render()
 	case TestPattern::FrameLock:										// 7
 		GenerateTestPattern_FrameLock(ctx);
 		break;
+    case TestPattern::EndOfMandatoryTests:								// 
+        GenerateTestPattern_EndOfMandatoryTests(ctx);
+        break;
 	case TestPattern::MotionBlur:										// 8
 		GenerateTestPattern_MotionBlur(ctx);
 		break;
     case TestPattern::GameJudder:										// 9
         GenerateTestPattern_GameJudder(ctx);
+        break;
+    case TestPattern::Tearing:							    			// 0
+        GenerateTestPattern_Tearing(ctx);
         break;
     case TestPattern::EndOfTest:
         GenerateTestPattern_EndOfTest(ctx);
@@ -2135,8 +2457,7 @@ void Game::Render()
 
     m_deviceResources->PIXEndEvent();
 
-    // Show the new frame.
-    m_deviceResources->Present();
+    // moved Present() call out of Render() method so it can be 'timed' independently
 }
 
 // Helper method to clear the back buffers.

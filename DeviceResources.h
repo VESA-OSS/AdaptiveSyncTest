@@ -96,6 +96,8 @@ namespace DX
 
     private:
         void GetHardwareAdapter(IDXGIAdapter1** ppAdapter);
+        void GetPreferredAdapter(DXGI_GPU_PREFERENCE pref, IDXGIAdapter1** ppAdapter);
+
         void UpdateLogicalSize(RECT outputSize, float dpi);
 
         // Direct3D objects.
