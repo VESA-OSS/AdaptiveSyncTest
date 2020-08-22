@@ -108,7 +108,7 @@ public:
 	enum class TestPattern
 	{
 		StartOfTest,                // Must always be first.
-		ConnectionProperties,       //  0   Can we set resolution of fullscreen mode here?
+		ConnectionProperties,       //      Can we set resolution of fullscreen mode here?
 		PanelCharacteristics,       //  1   report limits of frame rate possible at this resolution
 		ResetInstructions,
         FlickerConstant,            //  2   MinHz, MaxHz, 60Hz, and 24/48Hz
@@ -175,7 +175,8 @@ private:
 
     void Update();
     void UpdateDxgiColorimetryInfo();
-	void InitEffectiveValues();
+    void UpdateDxgiRefreshRatesInfo();
+    void InitEffectiveValues();
     void SetMetadata(float max, float avg, ColorGamut gamut);
     void Render();
 	bool CheckHDR_On();
@@ -255,7 +256,7 @@ private:
     INT32                       m_modeHeight;
 
     LARGE_INTEGER               m_qpcFrequency;             // clock frequency on this PC
-    INT64                       m_lastReadCounts;          // qpc counts from when we started working on last frame
+    INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // ms simulate workload of app (just used for some tests)
     double                      m_frameTime;                // total time since last frame start in seconds
     double                      m_lastFrameTime;            // save from one frame ago
@@ -268,7 +269,7 @@ private:
     double                      m_totalTimeSinceStart;      // not sure if I need this?
     double                      m_testTimeRemainingSec;     // how long current test has been running in seconds
     uint64_t                    m_frameCounter;             // how many frames rendered in app
-    double                      m_targetFrameRate;          // frame rate we want to achieve
+    double                      m_targetFrameRate;          // frame rate we want to achieve               
     bool                        m_paused;                   // whether we are updating data or not
 
     double                      m_maxFrameRate;             // maximum this device can support                  1
@@ -276,10 +277,12 @@ private:
     double                      m_FrameRateRatio;           // ratio of above 2 parameters
 
     INT32                       m_flickerRateIndex;         // select frame rate in flicker test                2
+
     INT32                       m_waveCounter;              // control for square wave                          3
     bool                        m_squareWave;               // zigzag if false
     bool                        m_waveUp;                   // zig up or down
     INT32                       m_latencyRateIndex;         // select frame rate in frame latency test          4
+    double                      m_latencyTestFrameRate;     // frame rate specific to this test pattern         4
     bool                        m_sensorConnected;          // connection to the photocell dongle is live       4
     bool                        m_sensing;                  // whether we are running the sensor                4
     bool                        m_flash;                    // whether we are flashing the photocell this frame 4
@@ -294,13 +297,16 @@ private:
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
 
     INT32                       m_frameDropRateIndex;       // select frame rate in frame drop test             6
+
     INT32                       m_frameLockRateIndex;       // select frame rate in frame lock test             7
     INT32                       m_mediaRateIndex;           // ??
     float                       m_fAngle;                   // angle where moving object is at                  8
     INT32                       m_MotionBlurIndex;          // counter for frame fraction                       8
 //  bool                        m_bMotionBlur;              // whether Motion Blur is on                        8
+    double                      m_judderTestFrameRate;      // for BFI test
 
     float                       m_sweepPos;                 // position of bar in tearing test (pixels)         0
+    double                      m_tearingTestFrameRate;     // for tearing check
 
     INT32						m_currentProfileTile;
 	UINT32						m_maxPQCode;		        // PQ code of maxLuminance

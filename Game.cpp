@@ -63,6 +63,7 @@ void Game::ConstructorInternal()
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
     m_mediaRateIndex   = 0;		// select between 60, 90, 120, 180, 240Hz for Jitter
 
+    m_latencyTestFrameRate = 60.;//                                                                 4
     m_sensorConnected = false;  //
     m_sensing = false;          // 
     m_flash = false;            // whether we are flashing the photocell this frame                 4
@@ -74,14 +75,16 @@ void Game::ConstructorInternal()
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
     m_frameDropRateIndex = 0;   // select subtest for frameDrop test                                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
+    m_judderTestFrameRate = 60.;//
     m_fAngle = 0;               // angle of object moving around screen                             8,9
     m_MotionBlurIndex = maxMotionBlurs;  // start with frame fraction 100%                          8
+    m_tearingTestFrameRate = 60.;  //
     m_sweepPos = 0;             // position of bar in Tearing test                                  0
 
     m_targetFrameRate = 60.f;
-
-    m_sleepDelay = 10.0;
-    m_frameTime  = 0.0;
+    m_frameTime     = 0.016666;
+    m_lastFrameTime = 0.016666;
+    m_sleepDelay = 16.0;        // ms simulate workload of app (just used for some tests)
     m_totalFrameTime = 0.0;     // accumulator for average
     m_frameCount = 0;
     m_frameCounter = 0;         // frames since start of app execution
@@ -400,7 +403,7 @@ void Game::Tick()
 #endif
             }
 
-            // advance to current frame
+            // advance printout columns to current frame
             RotateFrameLog();                                    // make room to store this latest data
 
 //          m_frameLog[0]->frameID = m_frameCounter;             // log the frame ID
@@ -475,12 +478,19 @@ void Game::Tick()
             INT64 inputCounts = m_avgInputTime * dFrequency;    
             m_frameLog[0]->clickCounts = m_frameLog[0]->readCounts - inputCounts;
 
-            double sleepDelay = (1000.0 / m_targetFrameRate) - 1.3;    // assume 1.3ms of GPU workload
-            if (m_currentTest == TestPattern::DisplayLatency)
-                sleepDelay = 8.0;     // 8ms hard coded to give game-like workload
+            // adjust delay to reach target frame rate
+            double currentFrameTime = 0.5 * (m_frameTime + m_lastFrameTime);        // average of last two frame times
+            double targetFrameTime = 1.0 / m_targetFrameRate;
+            double deltaFrameTimeMs = (targetFrameTime - currentFrameTime ) * 1000.0;   // also convert to ms
+            m_sleepDelay += deltaFrameTimeMs*0.5;                                       // 50% relaxation factor
+
+            if (m_sleepDelay < 0.005) m_sleepDelay = 0.0;                               // limit to valid range
+            if (m_sleepDelay > 50.0)  m_sleepDelay = 50.0;
+
+            double sleepDelay = m_sleepDelay;
 
             // model app workload by sleeping that many ms
-            mySleep(sleepDelay);
+            mySleep( sleepDelay );
             Update();                                       // actually do some CPU stuff
 
             // log when drawing starts on the GPU
@@ -617,41 +627,17 @@ void Game::TickOld()
 // Update any parameters used for animations.
 void Game::Update()
 {
-    D2D1_COLOR_F endColor = D2D1::ColorF(D2D1::ColorF::Black, 1);
-
     switch (m_currentTest)
     {
-	case TestPattern::PanelCharacteristics:
+    case TestPattern::ConnectionProperties:                                                     //
+        UpdateDxgiRefreshRatesInfo();
+        break;
+
+    case TestPattern::PanelCharacteristics:                                                     // 1
 		UpdateDxgiColorimetryInfo();
 		break;
 
-    case TestPattern::WarmUp:
-        if (m_newTestSelected)
-        {
-            m_testTimeRemainingSec = 60.0f * 30.0f;	// 30 minutes
-        }
-        else
-        {
-            m_testTimeRemainingSec -= m_frameTime;
-            m_testTimeRemainingSec = std::max(0.0, m_testTimeRemainingSec);
-        }
-        break;
-
-    case TestPattern::Cooldown:
-        if (m_newTestSelected)
-        {
-            m_testTimeRemainingSec = 60.0f;		// One minute is 60 seconds
-        }
-        else
-        {
-            m_testTimeRemainingSec -= m_frameTime;
-            m_testTimeRemainingSec = std::max(0.0, m_testTimeRemainingSec);
-        }
-        if (m_testTimeRemainingSec <= 0.0f)
-            SetTestPattern(m_cachedTest);
-        break;
-
-    case TestPattern::FlickerVariable:
+    case TestPattern::FlickerVariable:                                                          // 3
         // compute frame rate for this frame
         if (m_squareWave)
         {
@@ -669,7 +655,7 @@ void Game::Update()
                 m_waveCounter = SQUARE_COUNT;   // reset counter
             }
         }
-        else
+        else    // zig-zag not square wave
         {
             if (m_waveUp)
             {
@@ -690,13 +676,38 @@ void Game::Update()
                 }
             }
         }
-//      m_sleepDelay = 1000.0 / m_targetFrameRate;
         break;
 
-    case TestPattern::DisplayLatency:
+    case TestPattern::DisplayLatency:                                                           // 4
         {
 
         }
+        break;
+
+    case TestPattern::WarmUp:                                                                   // W
+        if (m_newTestSelected)
+        {
+            m_testTimeRemainingSec = 60.0f * 30.0f;	// 30 minutes
+        }
+        else
+        {
+            m_testTimeRemainingSec -= m_frameTime;
+            m_testTimeRemainingSec = std::max(0.0, m_testTimeRemainingSec);
+        }
+        break;
+
+    case TestPattern::Cooldown:                                                                 // C
+        if (m_newTestSelected)
+        {
+            m_testTimeRemainingSec = 60.0f;		// One minute is 60 seconds
+        }
+        else
+        {
+            m_testTimeRemainingSec -= m_frameTime;
+            m_testTimeRemainingSec = std::max(0.0, m_testTimeRemainingSec);
+        }
+        if (m_testTimeRemainingSec <= 0.0f)
+            SetTestPattern(m_cachedTest);
         break;
 
     default:
@@ -730,6 +741,8 @@ void Game::Update()
     {
         UpdateDxgiColorimetryInfo();
     }
+    // TODO same for UpdateDxgiRefreshRatesInfo()
+
 }
 
 void Game::ChangeG2GFromIndex(bool increment)
@@ -803,21 +816,25 @@ void Game::ChangeSubtest(bool increment)
         m_squareWave = !m_squareWave;               // toggle between squarewave and zigzag
         break;
 
+// TODO: these should probably all have their own state...  m_judderTestFrameRate, etc.
     case TestPattern::DisplayLatency:                                                           // 4
-        if (!increment)                             // invert so up arrow increases time
+    {
+        double delta = 1.0;
+        if (m_latencyTestFrameRate >=  69.6) delta = 2.0;
+        if (m_latencyTestFrameRate >= 149.6) delta = 5.0;
+        if (m_latencyTestFrameRate >= 239.6) delta = 10.0;
+        if (m_latencyTestFrameRate >= 479.6) delta = 30.0;
+
+        if (increment)
         {
-            m_sleepDelay++;
-            if (m_sleepDelay > maxSleepDelay)
-                m_sleepDelay = maxSleepDelay;
+            m_latencyTestFrameRate -= delta;
         }
         else
         {
-            m_sleepDelay--;
-            if (m_sleepDelay < 0)
-                m_sleepDelay = 0;
+            m_latencyTestFrameRate += delta;
         }
-        m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
         break;
+    }
 
     case TestPattern::GrayToGray:                                                               // 5
         ChangeG2GToIndex(increment);
@@ -873,34 +890,48 @@ void Game::ChangeSubtest(bool increment)
 
     case TestPattern::GameJudder:                                                               // 9
     {
+        double delta = 1.0;
+        if (m_judderTestFrameRate >= 69.6) delta = 2.0;
+        if (m_judderTestFrameRate >= 149.6) delta = 5.0;
+        if (m_judderTestFrameRate >= 239.6) delta = 10.0;
+        if (m_judderTestFrameRate >= 479.6) delta = 30.0;
+
         if (increment)
         {
-            m_sleepDelay--;
+            m_judderTestFrameRate -= delta;
         }
         else
         {
-            m_sleepDelay++;
+            m_judderTestFrameRate += delta;
         }
         break;
-        m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
     }
 
     case TestPattern::Tearing:                                                                  // 0
     {
+        double delta = 1.0;
+        if (m_tearingTestFrameRate >= 69.6) delta = 2.0;
+        if (m_tearingTestFrameRate >= 149.6) delta = 5.0;
+        if (m_tearingTestFrameRate >= 239.6) delta = 10.0;
+        if (m_tearingTestFrameRate >= 479.6) delta = 30.0;
+
         if (increment)
         {
-            m_sleepDelay--;
+            m_tearingTestFrameRate -= delta;
         }
         else
         {
-            m_sleepDelay++;
+            m_tearingTestFrameRate += delta;
         }
         break;
-        m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
     }
-    break;
 
     }
+}
+void Game::UpdateDxgiRefreshRatesInfo()
+{
+    // TODO move code to find min/maxFrameRates into here from ConnectionProperties test pattern routine
+
 }
 
 void Game::UpdateDxgiColorimetryInfo()
@@ -1102,6 +1133,8 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
         }
     }
     m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
+
+    // TODO tag which mode is current (defaults to highest for now)
 
     text << "Ratio: " << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
 
@@ -1385,10 +1418,10 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
 		std::wstringstream title;
         title << L"2 Flicker at Constant Refresh Rate: \n";
         title << fixed;
-        title << "Selected: " << setw(12) << setprecision(3) << refreshRate << L"fps  ";
-        title << setprecision(5) << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  " << setw(12) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-        title << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
         
         // display brightness level for this test
         title << setprecision(0);
@@ -1434,14 +1467,14 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
 		std::wstringstream title;
 		title << L"3 Flicker at Varying Refresh Rate: ";
         if (m_squareWave)
-            title << L"-SquareWave\n";
+            title << L"-Square Wave\n";
         else
             title << L"-Zig Zag\n";
         title << fixed;
-        title << "Selected: " << setw(12) << setprecision(3) << m_targetFrameRate << L"fps  ";
-        title << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
-        title << "Current:  " << setw(12) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-        title << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
 
         // display brightness level for this test
         title << setprecision(0);
@@ -1472,16 +1505,14 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
 
 void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ************************************* 4
 {
-
-//  float refreshRate = 120.0f;
-    m_sleepDelay = 0.0;  // ms
-
     // fill the screen background with 100 nits white
     float c = nitstoCCCS( 100 );
     ComPtr<ID2D1SolidColorBrush> backgroundBrush;
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &backgroundBrush));
     auto logSize = m_deviceResources->GetLogicalSize();
     ctx->FillRectangle(&logSize, backgroundBrush.Get());
+
+    m_targetFrameRate = m_latencyTestFrameRate;
 
     // draw a square 50mm on a side
     c = nitstoCCCS( 200 );
@@ -1526,11 +1557,12 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 
         if ( m_sensing )
         {
-            // print number of samples we are taking per second
-            double frameTime = (m_frameTime + m_lastFrameTime)*0.5;
-            title << "Current:" << fixed << setw(11) << setprecision(3);
-            title << 1.0 / frameTime << L"fps  ";
-            title << setprecision(5) << frameTime * 1000.f << L"ms\n";
+            // print frame rate we were targeting for this test (not sampling rate)
+            title << fixed;
+            title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+            title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+            title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+            title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
 
             int count = m_sensorCount;
             if (count <= 0) count = 1;
@@ -1557,11 +1589,11 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
         }
         else
         {
-            //      title << "Selected: " << refreshRate << L"fps  " << 1.0f / refreshRate * 1000.f << L"ms\n";
-            //      title << "Selected: " << L"Maximumfps\n";
-            title << "Current:  " << fixed << setw(11) << setprecision(3);
-            title << 1.0 / m_frameTime << L"fps  ";
-            title << setprecision(5) << m_frameTime * 1000.f << L"ms";
+            title << fixed;
+            title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+            title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+            title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+            title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
 
             int numCols = 7;
             assert(numCols <= frameLogLength);
@@ -1569,7 +1601,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
 
             // Display frame id counter
-            title << "\nFrame ID:  ";
+            title << "Frame ID:  ";
             for (int i = numCols - 1; i >= 0; i--)
             {
                 title << setw(8) << m_frameLog[i]->frameID;
@@ -1750,11 +1782,12 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
 	if (m_showExplanatoryText)
 	{
 		std::wstringstream title;
-		title << fixed << L"5 Gray To Gray:\n";
-        title << "Selected: " << setw(10) << setprecision(3) << refreshRate << L"fps  ";
-        title                 << setw(10) << setprecision(3) << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  " << setw(10) << setprecision(3) << 1.0f / m_frameTime << L"fps  ";
-        title                 << setw(10) << setprecision(3) << m_frameTime * 1000.f << L"ms\n";
+		title << L"5 Gray To Gray:\n";
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
         title << L"Select 'From' brightness level using ,/. aka </> keys\n";
         title << L"Select 'To' brightness level using Up/Down arrows\n";
         title << "From:" << setw(8) << setprecision(2) << GrayToGrayNits(m_g2gFromIndex);
@@ -1875,10 +1908,11 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
     {
         std::wstringstream title;
         title << L"6 Frame Drop Test\n";
-        title << "Selected: " << fixed << setw(8) << setprecision(3);
-        title << refreshRate << L"fps  " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  " << fixed << setw(8) << setprecision(3);
-        title << 1.0 / m_frameTime << L"fps  " << m_frameTime * 1000.f << L"ms\n";
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << "Grid " << nRows << " x " << nCols;
         title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
@@ -2040,10 +2074,12 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
 
 		std::wstringstream title;
 		title << L"7 Framerate Lock or Jitter Test\n";
-        title << "Selected: " << fixed << setw(8) << setprecision(3);
-        title << refreshRate << L"fps  " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  " << fixed << setw(8) << setprecision(3);
-        title << 1.0 / m_frameTime << L"fps  " << m_frameTime * 1000.f << L"ms\n";
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << "Grid " << nRows << " x " << nCols;
         title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
@@ -2129,10 +2165,12 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // *********
     {
         std::wstringstream title;
         title << L"8 Motion Blur Tuning\n";
-        title << fixed << setw(10) << setprecision(3);
-        title << "Selected: " << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << fixed << setw(10) << setprecision(3);
-        title << "Current:  " << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
         title << "Frame Fraction: ";
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
         title << L"\nSelect Frame Fraction using Up/Down arrows\n";
@@ -2149,8 +2187,6 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
 {
     float nits = 100;
 
-    m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
-
     bool bBFI = true;
     if (m_frameTime > 0.025 ||         // will flicker if too slow at under 50ms (40Hz)
         m_frameTime < 0.01666666)      // no time for a frame to fit if too fast (>1/2 refresh rate)
@@ -2160,6 +2196,8 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
 
     if ( bBFI ) nits *= 2.0f;       // increase it if we are drawing black frames
     // should scale this based on duration of black frame
+
+    m_targetFrameRate = m_judderTestFrameRate;
 
     float c = nitstoCCCS(nits);
     ComPtr<ID2D1SolidColorBrush> spinnerBrush;
@@ -2213,10 +2251,10 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
         title << L"9 Game Judder Removal";
         if (bBFI)
             title << "  BFI";
-        title << "\nSelected: ";
+        title << "\nTarget:  ";
         title << fixed << setw(10) << setprecision(3);
         title << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  ";
+        title << "Current: ";
         title << fixed << setw(10) << setprecision(3);
         title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
 
@@ -2230,8 +2268,6 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
 
 void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ********************** 0. T.
 {
-    m_targetFrameRate = 1000.f / (m_sleepDelay + 1.3);
-
     // get window dimensions in pixels
     auto logSize = m_deviceResources->GetLogicalSize();
 
@@ -2241,6 +2277,8 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ************
     // compute rectangle size
     float fHeight = (logSize.bottom - logSize.top);
     float fWidth  = (logSize.right - logSize.left);
+
+    m_targetFrameRate = m_tearingTestFrameRate;
 
     double duration = 0.250;                   // time to sweep L -> R across screen in seconds
 
@@ -2264,11 +2302,11 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ************
         double refreshRate = m_targetFrameRate;
 
         std::wstringstream title;
-        title << L"0 Tearing Check";
-        title << "\nSelected: ";
+        title << L"0 Tearing Check\n";
+        title << "Target:  ";
         title << fixed << setw(10) << setprecision(3);
         title << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current:  ";
+        title << "Current: ";
         title << fixed << setw(10) << setprecision(3);
         title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
 
