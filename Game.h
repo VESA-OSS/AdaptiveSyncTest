@@ -58,8 +58,8 @@ private:
 #define numMediaRates 13
     float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f, 120.0f, 180.0f, 240.0f };
 
-#define numFrameDropRates 7
-    float frameDropRates[numFrameDropRates] = { 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
+#define numFrameDropRates 8
+    float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
 
 #define maxSleepDelay 120.          // ms
 
@@ -104,6 +104,16 @@ private:
 public:
 
     Game(PWSTR appTitle);
+
+    enum class WaveEnum
+    {
+        Nil,
+        ZigZag,
+        SquareWave,
+        Random,
+        Sine,
+        Max,
+    };
 
 	enum class TestPattern
 	{
@@ -187,7 +197,7 @@ private:
 	float GetTierLuminance(Game::TestingTier tier);
     bool isMedia();                                             // whether this test uses media fixed rates or game dynamic rates
     void RotateFrameLog();                                      // Shuffle entries down to make room
-    float GrayToGrayNits(INT32 index);
+    float GrayToGrayValue(INT32 index);
 
     void ResetSensorStats(void);
     void ResetFrameStats(void);
@@ -258,12 +268,15 @@ private:
     LARGE_INTEGER               m_qpcFrequency;             // clock frequency on this PC
     INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // ms simulate workload of app (just used for some tests)
+    INT32                       m_frameCount;               // number of frames in average
     double                      m_frameTime;                // total time since last frame start in seconds
     double                      m_lastFrameTime;            // save from one frame ago
-    INT32                       m_frameCount;               // number of frames in average
     double                      m_totalFrameTime;           // for average frame time
+    double                      m_totalFrameTime2;          // sum of squares of above for variance
     double                      m_totalRenderTime;          // for average Render time
+    double                      m_totalRenderTime2;         // sum of squares of above for variance
     double                      m_totalPresentTime;         // for average Present time
+    double                      m_totalPresentTime2;        // sum of squares of above for variance
     double                      m_avgInputTime;             // hard-coded until dongle drives input
 
     double                      m_totalTimeSinceStart;      // not sure if I need this?
@@ -279,7 +292,7 @@ private:
     INT32                       m_flickerRateIndex;         // select frame rate in flicker test                2
 
     INT32                       m_waveCounter;              // control for square wave                          3
-    bool                        m_squareWave;               // zigzag if false
+    WaveEnum                    m_waveEnum;                 // zigzag vs square wave vs random                  3
     bool                        m_waveUp;                   // zig up or down
     INT32                       m_latencyRateIndex;         // select frame rate in frame latency test          4
     double                      m_latencyTestFrameRate;     // frame rate specific to this test pattern         4
@@ -289,9 +302,8 @@ private:
     double                      m_minSensorTime;            // min value of end-to-end lag measured             4
     double                      m_maxSensorTime;            // max value of end-to-end lag measured             4
     INT32                       m_sensorCount;              // number of valid latency samples since reset      4
-    double                      m_totalSensorTime;          // sum of end-to-end lag. Used to compute average   4
+    double                      m_totalSensorTime;          // sum of sensor time. Used to compute average      4
     double                      m_totalSensorTime2;         // sum of squares. Used to compute variance         4
-    double                      m_avgSensorTime;            // end-to-end lag -averaged during sensing          4
 
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5

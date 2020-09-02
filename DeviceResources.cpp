@@ -131,10 +131,10 @@ void DX::DeviceResources::CreateDeviceResources()
     };
 
     ComPtr<IDXGIAdapter1> adapter;
-//  GetHardwareAdapter(adapter.GetAddressOf());
+    GetHardwareAdapter(adapter.GetAddressOf());
 //  GetPreferredAdapter( DXGI_GPU_PREFERENCE_MINIMUM_POWER, adapter.GetAddressOf());        // Can't find an output6/display off this device
 //  GetPreferredAdapter( DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, adapter.GetAddressOf());
-    GetPreferredAdapter( DXGI_GPU_PREFERENCE_UNSPECIFIED, adapter.GetAddressOf());
+//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_UNSPECIFIED, adapter.GetAddressOf());
 
     // Create the Direct3D 11 API device object and a corresponding context.
     ComPtr<ID3D11Device> device;
