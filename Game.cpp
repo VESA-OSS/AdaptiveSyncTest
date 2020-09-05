@@ -1117,7 +1117,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.65\n\n";
+    text << L"\n\nVersion 0.66\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1546,6 +1546,12 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
         }
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 #if 0
         // display brightness level for this test
         title << setprecision(0);
@@ -2107,6 +2113,12 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
         title << "Grid " << nRows << " x " << nCols;
         title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
@@ -2272,7 +2284,13 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
         title << "Grid " << nRows << " x " << nCols;
+
         title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
@@ -2478,6 +2496,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ************
     // how far to move the bar each refresh:
     double selectedFrameTime = 1.0 / m_targetFrameRate;
     double pixPerFrame = fWidth * selectedFrameTime / duration;
+    int nCols = round(duration / selectedFrameTime);
 
     // move the bar over:
     m_sweepPos += pixPerFrame;
@@ -2496,12 +2515,17 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ************
 
         std::wstringstream title;
         title << L"0 Tearing Check\n";
-        title << "Target:  ";
-        title << fixed << setw(10) << setprecision(3);
-        title << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current: ";
-        title << fixed << setw(10) << setprecision(3);
-        title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+        title << "Grid " << nCols;
 
         title << L"\nSelect frame duration using Up/Down arrows\n";
         title << m_hideTextString;
