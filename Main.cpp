@@ -330,6 +330,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ToggleFullscreen(hWnd);
             }
             break;
+        case 0x41:                                                        // 'A'
+            game->ToggleAutoG2G();
+            break;
         case 0x43:                                                        // 'C'
             game->SetTestPattern(Game::TestPattern::Cooldown);
             break;

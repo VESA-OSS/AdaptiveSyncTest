@@ -39,7 +39,7 @@ private:
 		DisplayHDR3000  = 6,
         DisplayHDR4000  = 7,
         DisplayHDR6000  = 8,
-        DisplayHDR10000 = 9
+        DisplayHDR10000 = 9,
     };
 
     enum ColorGamut
@@ -53,19 +53,19 @@ private:
     };
 
     // each test indexes into these arrays using its currentRateIndex
-#define numFlickerRates 5
+#define numFlickerRates 5           // number of frame rates in FlickerConstant test                2
 
-#define numMediaRates 13
-    float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f, 120.0f, 180.0f, 240.0f };
+#define numMediaRates 10            // number of frame rates in the media rate test                 7
+    float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f };
 
-#define numFrameDropRates 8
+#define numFrameDropRates 8         // number of frame rates in the FrameDrop test                  6
     float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
 
 #define maxSleepDelay 120.          // ms
 
-#define numGtGValues 5
+#define numGtGValues 5              // number of levels in the G2G tests                            5
 
-#define numCommonRates 10
+#define numCommonRates 10           // not used anywhere
     float commonFrameRates[numCommonRates] = { 30.f, 48.f, 60.f, 90.f, 120.f, 144.f, 180.f, 240.f, 300.f, 360.f };
 
     const INT32 maxMotionBlurs = 10;
@@ -167,6 +167,7 @@ public:
     void StartTestPattern(void);
     void TogglePause(void);
     void ToggleSensing(void);
+    void ToggleAutoG2G(void);
     void ResetCurrentStats(void);                     // reset whichever stats are currently in use
 
     void ChangeGradientColor(float deltaR, float deltaG, float deltaB);
@@ -198,6 +199,9 @@ private:
     bool isMedia();                                             // whether this test uses media fixed rates or game dynamic rates
     void RotateFrameLog();                                      // Shuffle entries down to make room
     float GrayToGrayValue(INT32 index);
+    void UpdateFlickerVariable();                               // Update                                       3
+    void UpdateGrayToGray();                                    // handle the updates for G2G test              5
+//  void Update
 
     void ResetSensorStats(void);
     void ResetFrameStats(void);
@@ -261,11 +265,13 @@ private:
     TestingTier                 m_testingTier;
     TestPattern                 m_currentTest;
     TestPattern                 m_cachedTest;
+    float                       m_color;                    // color to use in test patch this frame (grayscale)
 
     INT32                       m_modeWidth;                // resolution of current mode (actually native res now)
     INT32                       m_modeHeight;
 
     LARGE_INTEGER               m_qpcFrequency;             // clock frequency on this PC
+    INT64                       m_mediaPresentDuration;     // frame duration when using SwapChainMedia video sync in 0.1us
     INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // ms simulate workload of app (just used for some tests)
     INT32                       m_frameCount;               // number of frames in average
@@ -273,6 +279,8 @@ private:
     double                      m_lastFrameTime;            // save from one frame ago
     double                      m_totalFrameTime;           // for average frame time
     double                      m_totalFrameTime2;          // sum of squares of above for variance
+    double                      m_totalAppTime;             // for average Render time
+    double                      m_totalAppTime2;            // sum of squares of above for variance
     double                      m_totalRenderTime;          // for average Render time
     double                      m_totalRenderTime2;         // sum of squares of above for variance
     double                      m_totalPresentTime;         // for average Present time
@@ -305,8 +313,10 @@ private:
     double                      m_totalSensorTime;          // sum of sensor time. Used to compute average      4
     double                      m_totalSensorTime2;         // sum of squares. Used to compute variance         4
 
+    bool                        m_from;                     // whether we use the "From" color or "To" color    5
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
+    bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
 
     INT32                       m_frameDropRateIndex;       // select frame rate in frame drop test             6
 
