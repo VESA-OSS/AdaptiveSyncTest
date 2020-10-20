@@ -44,7 +44,8 @@ Game::Game(PWSTR appTitle)
     ConstructorInternal();
 }
 
-#define SQUARE_COUNT 50
+#define SQUARE_COUNT 10
+
 void Game::ConstructorInternal()
 {
     if (!QueryPerformanceFrequency(&m_qpcFrequency))            // initialize clock frequency (of this machine)
@@ -60,9 +61,9 @@ void Game::ConstructorInternal()
     m_color = 0.f;              // black by default
 
     m_currentTest = TestPattern::StartOfTest;
-    m_flickerRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Flicker test          2
+    m_flickerRateIndex = 0;		// select between min, max, etc for Flicker test                    2
     m_waveCounter = SQUARE_COUNT;
-    m_waveEnum = WaveEnum::ZigZag; // default                                                       3
+    m_waveEnum = WaveEnum::SquareWave; // default                                                   3
     m_waveUp = true;            // for use in zigzag wave                                           3
 
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
@@ -102,6 +103,8 @@ void Game::ConstructorInternal()
     {
         m_frameEvents[i].clickCounts = 0;
         m_frameEvents[i].readCounts = 0;
+        m_frameEvents[i].sleepCounts = 0;
+        m_frameEvents[i].updateCounts = 0;
         m_frameEvents[i].drawCounts = 0;
         m_frameEvents[i].presentCounts = 0;
         m_frameEvents[i].syncCounts = 0;
@@ -200,9 +203,10 @@ void Game::ResetFrameStats()
     m_frameCount = 0;
 
     m_totalFrameTime  = 0.;             // clear accumulator
-    m_totalFrameTime2 = 0.;            // square of above used for variance math
-//  m_minFrameTime = 0.999999;
-//  m_maxFrameTime = 0.;
+    m_totalFrameTime2 = 0.;             // square of above used for variance math
+
+    m_totalRunningTime  = 0.;           // not sure we really ever want to reset this though...
+    m_totalRunningTime2 = 0.;
 
     m_totalRenderTime  = 0.;
     m_totalRenderTime2 = 0.;
@@ -415,7 +419,7 @@ void Game::Tick()
     {
         if (m_sensing)
         {
-            m_flash = m_frameCounter & 1;                        // switch every other frame
+            m_flash = m_frameCounter & 0x01;                     // switch every other frame
 
             // if there should be a flash this frame, reconnect the sensor (should not be required every frame)
             if (m_flash)
@@ -512,22 +516,35 @@ void Game::Tick()
             }
             else
             {
-                // adjust delay to reach target frame rate
-                double currentFrameTime = 0.5 * (m_frameTime + m_lastFrameTime);        // average of last two frame times
+#if 0
+                // regulator to adjust delay to produce target frame rate
+                double currentFrameTime = 0.5 * (m_frameTime + m_lastFrameTime);            // average of last two frame times
                 double targetFrameTime = 1.0 / m_targetFrameRate;
-                double deltaFrameTimeMs = (targetFrameTime - currentFrameTime) * 1000.0;   // also convert to ms
-                m_sleepDelay += deltaFrameTimeMs * 0.5;                                       // 50% relaxation factor
+                double deltaFrameTime = (targetFrameTime - currentFrameTime);               // ideal - actual
+                m_sleepDelay += 1000.0 * deltaFrameTime * 0.5;                              // 50% relaxation factor
+#endif
+                // make sure FrameTime is up to date (should not be a member var)
+                m_targetFrameTime = 1.0 / m_targetFrameRate;
+                double avgRunTime;                                                     // how long the app spends not sleeping
+                if (m_frameCount > 1)
+                    avgRunTime = m_totalRunningTime / m_frameCount;   
+                else
+                    avgRunTime = 0.0013;     // aka 1.3ms
 
-                if (m_sleepDelay < 0.005) m_sleepDelay = 0.0;                               // limit to valid range
-                if (m_sleepDelay > 50.0)  m_sleepDelay = 50.0;
+                // compute how much of frame time to sleep by subtracting time running CPU/GPU
+                m_sleepDelay = 1000.0 * (m_targetFrameTime - avgRunTime);
 
-                double sleepDelay = m_sleepDelay;
+                if (m_sleepDelay <  0.0) m_sleepDelay =  0.0;                               // limit to valid range
+                if (m_sleepDelay > 50.0) m_sleepDelay = 50.0;
 
-                // model app workload by sleeping that many ms
-                mySleep(sleepDelay);
+                // Hopefully set correct duration for this frame by sleeping enough
+                m_frameLog[0]->sleepCounts = getPerfCounts();
+                mySleep(m_sleepDelay);
             }
 
-            Update();                                       // actually do some CPU stuff
+            // log when app logic starts on the GPU
+            m_frameLog[0]->updateCounts = getPerfCounts();
+            Update();                                       // actually do some CPU workload stuff
 
             // log when drawing starts on the GPU
             m_frameLog[0]->drawCounts = getPerfCounts();
@@ -569,14 +586,20 @@ void Game::Tick()
                 if (m_frameTime > m_maxLatency)
                     m_maxLatency = m_frameTime;
 #endif
+                // accumulate Running time for computing Average and Variance
+                double sleepTime = (m_frameLog[0]->updateCounts - m_frameLog[0]->sleepCounts) / dFrequency;
+                double runningTime  = m_frameTime - sleepTime;  // all the time last frame not sleeping
+                m_totalRunningTime  += runningTime;
+                m_totalRunningTime2 += runningTime * runningTime;
+
                 // accumulate Render time for computing Average
-                double renderTime = (m_frameLog[0]->presentCounts - m_frameLog[0]->drawCounts) / dFrequency;
-                m_totalRenderTime += renderTime;
+                double renderTime  = (m_frameLog[0]->presentCounts - m_frameLog[0]->drawCounts) / dFrequency;
+                m_totalRenderTime  += renderTime;
                 m_totalRenderTime2 += renderTime * renderTime;
 
                 // accumulate Present time for computing Average
-                double presentTime = (m_frameLog[2]->syncCounts - m_frameLog[2]->presentCounts) / dFrequency;
-                m_totalPresentTime += presentTime;
+                double presentTime  = (m_frameLog[2]->syncCounts - m_frameLog[2]->presentCounts) / dFrequency;
+                m_totalPresentTime  += presentTime;
                 m_totalPresentTime2 += presentTime * presentTime;
 
 
@@ -665,6 +688,38 @@ void Game::TickOld()
 }
 
 // Every test pattern could have an update routine to call in the main update routine in Tick()
+void Game::UpdateFlickerConstant()
+{
+    // determine what rate to use based on the up/down arrow key setting
+    switch (m_flickerRateIndex)
+    {
+    case 0:
+        m_targetFrameRate = m_minFrameRate;        // min reported by implementation
+        break;
+
+    case 1:
+        m_targetFrameRate = m_maxFrameRate;        // max reported by implementation
+        break;
+
+    case 2:                                 // 24 if supported, else 48.
+        if (m_minFrameRate <= 24.0)
+            m_targetFrameRate = 24.0f;
+        else
+            if (m_minFrameRate <= 48.0)
+                m_targetFrameRate = 48.0f;
+            else
+                m_targetFrameRate = m_minFrameRate;
+        break;
+
+    case 3:
+        m_targetFrameRate = 120.0f;                // hard coded at 120Hz for stress test
+        break;
+
+    }
+
+    m_targetFrameTime = 1.0 / m_targetFrameRate;
+
+}
 
 // compute frame rate for this Flicker test with variable frame rate:                                       3
 void Game::UpdateFlickerVariable()
@@ -674,7 +729,7 @@ void Game::UpdateFlickerVariable()
         case WaveEnum::SquareWave:
         {
             m_waveCounter--;
-            if (m_waveCounter > 0)
+            if (m_waveCounter >= 0)
             {
                 if (m_waveUp)
                     m_targetFrameRate = m_maxFrameRate;
@@ -730,6 +785,8 @@ void Game::UpdateFlickerVariable()
         }
         break;
     }
+
+    m_targetFrameTime = 1.0 / m_targetFrameRate;
 }
 
 // Set correct color for mid-screen test rect in G2G test section 10.2
@@ -808,6 +865,119 @@ void Game::UpdateGrayToGray()
         m_color = GrayToGrayValue(m_g2gToIndex);
 }
 
+// update routine for Frame Drop test                                                                        6
+void Game::UpdateFrameDrop()
+{
+    // determine what rate to use based on the up/down arrow key setting
+    switch (m_frameDropRateIndex)
+    {
+    case 0:
+        m_targetFrameRate = 12;
+        break;
+    case 1:
+        m_targetFrameRate = 24;
+        break;
+    case 2:
+        m_targetFrameRate = 30;
+        break;
+    case 3:
+        m_targetFrameRate = 48;
+        break;
+    case 4:
+        m_targetFrameRate = 60;
+        break;
+    case 5:
+        m_targetFrameRate = 72;
+        break;
+    case 6:
+        m_targetFrameRate = 120;
+        break;
+    case 7:
+        m_targetFrameRate = 180;
+        break;
+    case 8:
+        m_targetFrameRate = 240;
+        break;
+    case 9:
+        m_targetFrameRate = m_maxFrameRate;       // max reported by implementation
+        break;
+    case 10:                                // stress test alternating between 24 and max
+        if (m_frameCounter & 0x01)          // alternate between 24Hz and Max
+            m_targetFrameRate = 48.0;
+        else
+            m_targetFrameRate = m_maxFrameRate;
+        break;
+    }
+
+    m_targetFrameTime = 1.0 / m_targetFrameRate;
+
+
+/*  float refreshRate = 60.0f;
+
+    // decide shape of grid for test pattern
+    int nCols = 10;
+    int nRows = 6;
+    switch (m_frameDropRateIndex)       // logic re frame rate should move into Update(); logic re tile dimensions could stay here.
+    {
+    case 0:
+        refreshRate = 24.0f;
+        nCols = 6;
+        nRows = 4;
+        break;
+
+    case 1:
+        refreshRate = 30.0f;
+        nCols = 6;
+        nRows = 5;
+        break;
+
+    case 2:
+        refreshRate = 48.0f;
+        nCols = 8;
+        nRows = 6;
+        break;
+
+    case 3:
+        refreshRate = 60.0f;
+        nCols = 10;
+        nRows = 6;
+        break;
+
+    case 4:
+        refreshRate = 90.0f;
+        nCols = 10;
+        nRows = 9;
+        break;
+
+    case 5:
+        refreshRate = 120.0f;
+        nCols = 12;
+        nRows = 10;
+        break;
+
+    case 6:
+        refreshRate = 180.0f;
+        nCols = 15;
+        nRows = 12;
+        break;
+
+    case 7:
+        refreshRate = 240.0f;
+        nCols = 16;
+        nRows = 15;
+        break;
+
+    default:
+        refreshRate = 60.0f;
+        nCols = 10;
+        nRows = 6;
+        break;
+    }
+    m_targetFrameRate = refreshRate;
+    */
+}
+
+
 // Update any parameters used for animations.
 void Game::Update()
 {
@@ -820,6 +990,10 @@ void Game::Update()
     case TestPattern::PanelCharacteristics:                                                     // 1
 		UpdateDxgiColorimetryInfo();
 		break;
+
+    case TestPattern::FlickerConstant:                                                          // 2
+        UpdateFlickerConstant();
+        break;
 
     case TestPattern::FlickerVariable:                                                          // 3
         UpdateFlickerVariable();
@@ -836,6 +1010,12 @@ void Game::Update()
             UpdateGrayToGray();
         }
         break;
+
+        case TestPattern::FrameDrop:                                                            // 6
+        {
+            UpdateFrameDrop();
+        }
+    break;
 
     case TestPattern::WarmUp:                                                                   // W
         if (m_newTestSelected)
@@ -963,6 +1143,7 @@ void Game::ChangeSubtest(bool increment)
                 m_flickerRateIndex = numFlickerRates-1;
         }
         m_flickerRateIndex = m_flickerRateIndex % (numFlickerRates+1);
+        ResetFrameStats();
         break;
 
     case TestPattern::FlickerVariable:                                                          // 3
@@ -972,7 +1153,7 @@ void Game::ChangeSubtest(bool increment)
             m_waveEnum = static_cast<WaveEnum>(testInt);
             if (m_waveEnum == WaveEnum::Max )
             {
-                m_waveEnum = WaveEnum::ZigZag;      // wrap to the beginning
+                m_waveEnum = WaveEnum::SquareWave;      // wrap to the beginning
             }
         }
         else
@@ -984,36 +1165,9 @@ void Game::ChangeSubtest(bool increment)
                 m_waveEnum = WaveEnum::Sine;       // wrap to the last
             }
         }
-
-/*
-        if (increment)
-        {
-            if ( WaveEnum::Sine == m_waveEnum)
-            {
-                // Clamp to the end of the list.
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) + 1;
-                m_waveEnum = static_cast<WaveEnum>(testInt);
-            }
-        }
-        else
-        {
-            if (WaveEnum::ZigZag == m_waveEnum)
-            {
-                // Clamp to the start of the list.
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) - 1;
-                m_waveEnum = static_cast<WaveEnum>(testInt);
-            }
-        }
-*/
+        ResetFrameStats();
         break;
 
-// TODO: these should probably all have their own state...  m_judderTestFrameRate, etc.
     case TestPattern::DisplayLatency:                                                           // 4
     {
         double delta = 1.0;
@@ -1067,6 +1221,7 @@ void Game::ChangeSubtest(bool increment)
                 m_frameLockRateIndex = numMediaRates-1;
         }
         m_frameLockRateIndex = m_frameLockRateIndex % numMediaRates;
+        ResetFrameStats();
         break;
 
     case TestPattern::MotionBlur:                                                               // 8
@@ -1204,7 +1359,7 @@ void Game::UpdateDxgiColorimetryInfo()
 
 void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
 {
-    // make sure we find the min/max resolutions even on startup
+    // make sure we initialize the min/max resolutions even on startup
     auto format = m_deviceResources->GetBackBufferFormat();
 
     ComPtr<IDXGIOutput> output;
@@ -1236,13 +1391,14 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.70\n\n";
+    text << L"\n\nVersion 0.75\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
     text << L"NUMBER KEY:	Jump to test number\n";
     text << L"SPACE:		Hide text and target circle\n";
     text << L"P, Pause:               Pause\n";
+    text << L"R:		Reset sync timer\n";
     text << L"C:		Start 60s cool-down\n";
     text << L"W:		Start 30min warm-up\n";
     text << L"ALT-ENTER:	Toggle fullscreen\n";
@@ -1349,7 +1505,8 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
     {
         if (pDescs[i].Width == m_modeWidth && pDescs[i].Height == m_modeHeight)
         {
-            double rate = (double)pDescs[i].RefreshRate.Numerator / (double)pDescs[i].RefreshRate.Denominator;
+            double rate = (double)pDescs[i].RefreshRate.Numerator
+                        / (double)pDescs[i].RefreshRate.Denominator;
             text << fixed << setw(10) << setprecision(4) << rate << "Hz\n";
 
             if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
@@ -1416,7 +1573,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)           //                  1
+void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)           //         1
 {
     std::wstringstream text;
 	text << fixed << setw(9) << setprecision(2);
@@ -1558,14 +1715,8 @@ void setBrightnessSliderPercent(UCHAR percent)
 
 void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 {
-	if (m_newTestSelected)
-	{
-
-// This works but we don't know what to set it to.
-// So it is commented out until we do
-//		setBrightnessSliderPercent(33);
-// EDID settings don't update afterwards anyway until next app run
-	}
+    if (m_newTestSelected)
+        ResetFrameStats();
 
     if (m_showExplanatoryText)
     {
@@ -1597,8 +1748,11 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 // Just draws the screen at about 10nits luminance in either HDR or SDR mode
 // Refresh rates should be 4 options:
 //    min reported, max reported, 60Hz, 24 if possible, else 48.
-void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
+void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			        	// 2
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
     // compute background color
     float c; 
     if (CheckHDR_On())
@@ -1620,51 +1774,21 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
     auto logSize = m_deviceResources->GetLogicalSize();
 	ctx->FillRectangle(&logSize, flickerBrush.Get());
 
-    // determine what rate to use based on the up/down arrow key setting
-    double refreshRate = 60.0f;
-    switch (m_flickerRateIndex)
-    {
-    case 0:
-        refreshRate = m_minFrameRate;        // min reported by implementation
-        break;
-
-    case 1:
-        refreshRate = m_maxFrameRate;        // max reported by implementation
-        break;
-
-    case 2:
-        refreshRate =  60.0f;                // hard coded at 60Hz
-        break;
-
-    case 3:
-        if (m_minFrameRate <= 24.0)
-            refreshRate = 24.0f;             // 24 if supported, else 48.
-        else
-            refreshRate = 48.0f;
-        break;
-
-    case 4:
-        refreshRate = 120.0f;                // hard coded at 120Hz
-        break;
-
-    }
-    m_targetFrameRate = refreshRate;
-
 	if ( m_showExplanatoryText )
 	{
 		std::wstringstream title;
-        title << L"2 Flicker at Constant Refresh Rate: \n";
-        title << fixed;
-        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
-        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms";
+        title << L"2 Flicker at Constant Refresh Rate: ";
         switch (m_flickerRateIndex)
         {
-        case 0: title << " min\n";   break;
-        case 1: title << " max\n";   break;
+        case 0: title << " Min\n";   break;
+        case 1: title << " Max\n";   break;
         case 2: title << " p60\n";   break;
         case 3: title << " 24/48\n"; break;
-        case 4: title << " 120\n";   break;
+        case 4: title << " p120\n";  break;
         }
+        title << fixed;
+        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << m_targetFrameTime * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
 
@@ -1704,6 +1828,9 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)				// 2
 
 void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
     // compute background color
     float c;
     if (CheckHDR_On())
@@ -1749,6 +1876,13 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
 #if 0
         // display brightness level for this test
         title << setprecision(0);
@@ -1925,17 +2059,20 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 title << setw(8) << time * 1000.0f;
             }
 
-            // Print time spent in App CPU code
-            title << "\nApp work:  " << setprecision(3);
-            for (int i = numCols - 1; i >= 0; i--)
+            // Print time spent running - not sleep()ing
+            title << "\nRun Time:  " << setprecision(3);
+            for (int i = numCols - 1; i > 0; i--)
             {
-                double time = (m_frameLog[i]->drawCounts - m_frameLog[i]->readCounts) / dFrequency;
+                double sleepTime = (m_frameLog[i]->updateCounts - m_frameLog[i]->sleepCounts) / dFrequency;
+                double frameTime = (m_frameLog[i-1]->readCounts - m_frameLog[i]->readCounts) / dFrequency;
+                double time = frameTime - sleepTime;
                 title << setw(8) << time * 1000.0f;
             }
-            double avgAppTime = m_totalRenderTime / m_frameCount;
-            double varAppTime = sqrt(m_frameCount * m_totalAppTime2 - m_totalAppTime * m_totalAppTime) / m_frameCount;
-            title << setprecision(3) << setw(8) << avgAppTime * 1000.f;
-            title << setprecision(3) << setw(8) << varAppTime * 1000.f;
+            title << "        ";
+            double avgRunTime = m_totalRunningTime / m_frameCount;
+            double varRunTime = sqrt(m_frameCount*m_totalRunningTime2 - m_totalRunningTime*m_totalRunningTime)/m_frameCount;
+            title << setprecision(3) << setw(8) << avgRunTime * 1000.f;
+            title << setprecision(3) << setw(8) << varRunTime * 1000.f;
 
             // Print time to render on GPU
             title << "\nRender:    " << setprecision(3);
@@ -2012,8 +2149,11 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 }
 
 
-void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //**************** 5.
+void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)                         //**************** 5.
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
     // compute brush for surround - 
     float c;
     if (!CheckHDR_On())                         // SDR
@@ -2040,7 +2180,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
     ComPtr<ID2D1SolidColorBrush> testBrush;                     // 10% area test square
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &testBrush));
 
-    float refreshRate = 60.0f;                  // this test is hard-coded to 60Hz
+    float refreshRate = m_maxFrameRate;                  // this test should run at max rate
     m_targetFrameRate = refreshRate;
 
 //  float dpi = m_deviceResources->GetDpi();
@@ -2070,6 +2210,13 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
         if ( m_autoG2G )
         { 
             title << L"\nAutomatic sequence:\n";
@@ -2097,8 +2244,12 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx) //*********
 	m_newTestSelected = false;
 
 }
-void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//********************** 6
+
+void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)                        	//********************** 6
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
     D2D1_RECT_F logSize = m_deviceResources->GetLogicalSize();
     ComPtr<ID2D1SolidColorBrush> whiteBrush;			// brush for the "white" color
 
@@ -2107,77 +2258,40 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
     float HDR10 = 150;
     nits = Remove2084(HDR10 / 1023.0f) * 10000.0f;		// "white" checker brightness
 
-    float c = nitstoCCCS(nits) / BRIGHTNESS_SLIDER_FACTOR;
-    DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
+    float c = nitstoCCCS(nits);
+    c = 0.50f;
+    int nRows, nCols, nCells;
 
-    float refreshRate = 60.0f;
-
-    // decide shape of grid for test pattern
-    int nCols = 10;
-    int nRows = 6;
-    switch (m_frameDropRateIndex)       // logic re frame rate should move into Update(); logic re tile dimensions could stay here.
+    // figure out number of squares to draw
+    double avgFrameRate = (m_maxFrameRate + 24.0) * 0.5;
+    double targetFrameRate = m_targetFrameRate;
+    if (m_frameDropRateIndex == numFrameDropRates - 1)
+        targetFrameRate = avgFrameRate;
+        
+    double cells = targetFrameRate * 0.25;            // for 1/4 second exposure per frame
+    nCells = round( cells );
+    nRows = floor( sqrt( cells ) );
+    nCols = nCells/nRows;
+    // if it's not an integer match, then keep trying smaller values
+    while (nRows * nCols != nCells)
     {
-    case 0:
-        refreshRate = 24.0f;
-        nCols = 6;
-        nRows = 4;
-        break;
-
-    case 1:
-        refreshRate = 30.0f;
-        nCols = 6;
-        nRows = 5;
-        break;
-
-    case 2:
-        refreshRate = 48.0f;
-        nCols = 8;
-        nRows = 6;
-        break;
-
-    case 3:
-        refreshRate = 60.0f;
-        nCols = 10;
-        nRows = 6;
-        break;
-
-    case 4:
-        refreshRate = 90.0f;
-        nCols = 10;
-        nRows =  9;
-        break;
-
-    case 5:
-        refreshRate = 120.0f;
-        nCols = 12;
-        nRows = 10;
-        break;
-
-    case 6:
-        refreshRate = 180.0f;
-        nCols = 15;
-        nRows = 12;
-        break;
-
-    case 7:
-        refreshRate = 240.0f;
-        nCols = 16;
-        nRows = 15;
-        break;
-
-    default:
-        refreshRate = 60.0f;
-        nCols = 10;
-        nRows = 6;
-        break;
+        nRows--;
+        nCols = nCells / nRows;
     }
-    m_targetFrameRate = refreshRate;
 
-    // draw a checkerboard background for reference
+    // compute size of square to draw
     float2 step;
     step.x = (logSize.right - logSize.left) / nCols;
     step.y = (logSize.bottom - logSize.top) / nRows;
 
+    // if we are on the last case, then run stress test with alternating min/max frame intervals
+    if (m_frameDropRateIndex == numFrameDropRates - 1)
+    {
+        step.x *= avgFrameRate / m_targetFrameRate;
+        c = 0.5 * m_targetFrameRate / avgFrameRate;     // this may need to be done in linear not gamma space in SDR mode
+    }
+
+    // draw a checkerboard background for reference
 #ifdef DRAW_CHECKER_BACKGROUND
     for (int jRow = 0; jRow < nRows; jRow++)
     {
@@ -2197,22 +2311,25 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
         }
     }
 #endif
-
-    // now draw the current square:
-    c = 1.0f;
-    DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
-
+    // compute position for current square 
     int iCol = m_frameCounter % nCols;
     int jRow = (m_frameCounter / nCols) % nRows;
 
+    if (iCol == 0)
+        m_sweepPos = 0;
+
     D2D1_RECT_F rect =
     {
-        iCol * step.x,
+        m_sweepPos,
         jRow * step.y,
-        (iCol + 1) * step.x,
+        m_sweepPos + step.x,
         (jRow + 1) * step.y
     };
+
+    // now draw the current square:
+    DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
     ctx->FillRectangle(&rect, whiteBrush.Get());
+    m_sweepPos += step.x;
 
     // Everything below this point should be hidden during actual measurements.
     if (m_showExplanatoryText)
@@ -2239,8 +2356,11 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)	//***********
 
 }
 
-void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//********************** 7
+void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	                          //********************** 7
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
 	D2D1_RECT_F logSize = m_deviceResources->GetLogicalSize();
 	ComPtr<ID2D1SolidColorBrush> whiteBrush;			// brush for the "white" color
 
@@ -2252,99 +2372,78 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	//**********
 	float c = nitstoCCCS(nits)/BRIGHTNESS_SLIDER_FACTOR;
 	DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
 
-    float refreshRate = 60.0f;
-
     // decide shape of grid for test pattern
     int nCols = 10;
     int nRows = 6;
     switch (m_frameLockRateIndex)
     {
     case 0:
-        refreshRate =  23.976f;
+        m_targetFrameRate =  23.976f;
         nCols =  6;
         nRows =  4;
         break;
 
     case 1:
-        refreshRate =  24.0f;
+        m_targetFrameRate =  24.0f;
         nCols = 6;
         nRows = 4;
         break;
 
     case 2:
-        refreshRate =  25.0f;
+        m_targetFrameRate =  25.0f;
         nCols =  5;
         nRows =  5;
         break;
 
     case 3:
-        refreshRate =  29.97f;
+        m_targetFrameRate =  29.97f;
         nCols =  6;
         nRows =  5;
         break;
 
     case 4:
-        refreshRate =  30.0f;
+        m_targetFrameRate =  30.0f;
         nCols =  6;
         nRows =  5;
         break;
 
     case 5:
-        refreshRate =  47.952f;
+        m_targetFrameRate =  47.952f;
         nCols = 8;
         nRows = 6;
         break;
 
     case 6:
-        refreshRate =  48.0f;
+        m_targetFrameRate =  48.0f;
         nCols = 8;
         nRows = 6;
         break;
 
     case 7:
-        refreshRate = 50.0f;
+        m_targetFrameRate = 50.0f;
         nCols = 8;
         nRows = 6;
         break;
 
     case 8:
-        refreshRate = 59.94f;
+        m_targetFrameRate = 59.94f;
         nCols = 10;
         nRows = 6;
         break;
 
     case 9:
-        refreshRate = 60.0f;
+        m_targetFrameRate = 60.0f;
         nCols = 10;
         nRows = 6;
         break;
-/*
-    case 10:
-        refreshRate = 120.0f;
-        nCols = 12;
-        nRows = 10;
-        break;
 
-    case 11:
-        refreshRate = 180.0f;
-        nCols = 15;
-        nRows = 12;
-        break;
-
-    case 12:
-        refreshRate = 240.0f;
-        nCols = 16;
-        nRows = 15;
-        break;
-*/
     default:
-        refreshRate = 60.0f;
+        m_targetFrameRate = 60.0f;
         nCols = 10;
         nRows = 6;
         break;
     }
-
-    m_targetFrameRate = refreshRate;
+    m_targetFrameTime = 1.0 / m_targetFrameRate;
 
 	// draw a checkerboard background for reference
 	float2 step;
@@ -2427,7 +2526,7 @@ void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // ********************** 8.
+void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)                 // ********************** 8.
 {
     float refreshRate = 60.0f;      // simulate 60Hz video on Netflix or Youtube
     m_targetFrameRate = refreshRate;
@@ -2510,7 +2609,7 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx) // *********
 
 }
 
-void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // ********************** 9.
+void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)                     // ********************** 9.
 {
     float nits = 100;
 
@@ -2593,8 +2692,11 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx) // *********
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ********************** 0. T.
+void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                 // ********************** 0. T.
 {
+    if (m_newTestSelected)
+        ResetFrameStats();
+
     // get window dimensions in pixels
     auto logSize = m_deviceResources->GetLogicalSize();
 
@@ -2616,7 +2718,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx) // ************
 
     // move the bar over:
     m_sweepPos += pixPerFrame;
-    if (m_sweepPos > logSize.right)
+    if (m_sweepPos > logSize.right-5)         // add tolerance in case of roundoff error
         m_sweepPos = 0.0;
 
     D2D1_RECT_F tearingRect =

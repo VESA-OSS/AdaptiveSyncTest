@@ -58,8 +58,8 @@ private:
 #define numMediaRates 10            // number of frame rates in the media rate test                 7
     float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f };
 
-#define numFrameDropRates 8         // number of frame rates in the FrameDrop test                  6
-    float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
+#define numFrameDropRates 11        // number of frame rates in the FrameDrop test                  6
+//  float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
 
 #define maxSleepDelay 120.          // ms
 
@@ -73,12 +73,14 @@ private:
 #define frameLogLength 11
     typedef struct frameEventStruct {
         UINT64 frameID;			    // frame counter value for this frame
-        INT64 clickCounts;	    	// count when input device button was clicked
-        INT64 readCounts;	    	// count when frame processing starts in app
-        INT64 drawCounts;	    	// count when drawing starts (GPU rendering)
-        INT64 presentCounts;   	    // count when app is done with rendering -Present() is called
-        INT64 syncCounts;	    	// count when GPU video system starts sending this image aka time of the Flip/Sync
-        INT64 photonCounts;		    // count at point when photons detected by sensor
+        INT64 clickCounts;	    	// counts when input device button was clicked
+        INT64 readCounts;	    	// counts when frame processing starts in app
+        INT64 sleepCounts;          // counts when we start the sleep that pads the frame time out
+        INT64 updateCounts;         // counts when we start the app update logic (probably tiny)
+        INT64 drawCounts;	    	// counts when drawing starts (GPU rendering)
+        INT64 presentCounts;   	    // counts when app is done with rendering -Present() is called
+        INT64 syncCounts;	    	// counts when GPU video system starts sending this image aka time of the Flip/Sync
+        INT64 photonCounts;		    // counts at point when photons detected by sensor
     } FrameEvents;
 
     FrameEvents *m_frameLog[frameLogLength];            // array of pointers to event structs
@@ -108,8 +110,8 @@ public:
     enum class WaveEnum
     {
         Nil,
-        ZigZag,
         SquareWave,
+        ZigZag,
         Random,
         Sine,
         Max,
@@ -183,10 +185,15 @@ public:
 private:
 
     void ConstructorInternal();
-
-    void Update();
     void UpdateDxgiColorimetryInfo();
     void UpdateDxgiRefreshRatesInfo();
+
+    void Update();                                              // Overall Update calls the below routines
+    void UpdateFlickerConstant();                               // set frame time for fixed rate flicker test       2
+    void UpdateFlickerVariable();                               // Set frame time for variable rate flicker         3
+    void UpdateGrayToGray();                                    // Handle the updates for G2G test                  5
+    void UpdateFrameDrop();                                     // Set a frame time for Frame Drop test             6
+
     void InitEffectiveValues();
     void SetMetadata(float max, float avg, ColorGamut gamut);
     void Render();
@@ -199,9 +206,6 @@ private:
     bool isMedia();                                             // whether this test uses media fixed rates or game dynamic rates
     void RotateFrameLog();                                      // Shuffle entries down to make room
     float GrayToGrayValue(INT32 index);
-    void UpdateFlickerVariable();                               // Update                                       3
-    void UpdateGrayToGray();                                    // handle the updates for G2G test              5
-//  void Update
 
     void ResetSensorStats(void);
     void ResetFrameStats(void);
@@ -270,17 +274,17 @@ private:
     INT32                       m_modeWidth;                // resolution of current mode (actually native res now)
     INT32                       m_modeHeight;
 
-    LARGE_INTEGER               m_qpcFrequency;             // clock frequency on this PC
+    LARGE_INTEGER               m_qpcFrequency;             // performanmce counter frequency on this PC
     INT64                       m_mediaPresentDuration;     // frame duration when using SwapChainMedia video sync in 0.1us
     INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
-    double                      m_sleepDelay;               // ms simulate workload of app (just used for some tests)
-    INT32                       m_frameCount;               // number of frames in average
+    double                      m_sleepDelay;               // simulated workload of app in ms
+    INT32                       m_frameCount;               // number of frames over which we average
     double                      m_frameTime;                // total time since last frame start in seconds
     double                      m_lastFrameTime;            // save from one frame ago
     double                      m_totalFrameTime;           // for average frame time
     double                      m_totalFrameTime2;          // sum of squares of above for variance
-    double                      m_totalAppTime;             // for average Render time
-    double                      m_totalAppTime2;            // sum of squares of above for variance
+    double                      m_totalRunningTime;         // for average time each frame not spent in Sleep
+    double                      m_totalRunningTime2;        // sum of squares of above for variance
     double                      m_totalRenderTime;          // for average Render time
     double                      m_totalRenderTime2;         // sum of squares of above for variance
     double                      m_totalPresentTime;         // for average Present time
@@ -289,8 +293,9 @@ private:
 
     double                      m_totalTimeSinceStart;      // not sure if I need this?
     double                      m_testTimeRemainingSec;     // how long current test has been running in seconds
-    uint64_t                    m_frameCounter;             // how many frames rendered in app
-    double                      m_targetFrameRate;          // frame rate we want to achieve               
+    uint64_t                    m_frameCounter;             // how many frames rendered in app since start
+    double                      m_targetFrameRate;          // frame rate we want to achieve
+    double                      m_targetFrameTime;          // duration of the frame being presented
     bool                        m_paused;                   // whether we are updating data or not
 
     double                      m_maxFrameRate;             // maximum this device can support                  1
