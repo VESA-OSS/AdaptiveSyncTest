@@ -82,7 +82,7 @@ void Game::ConstructorInternal()
     m_from = true;              // start with "From" color                                          5
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
-    m_frameDropRateIndex = 0;   // select subtest for frameDrop test                                6
+    m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
     m_judderTestFrameRate = 60.;//
     m_fAngle = 0;               // angle of object moving around screen                             8,9
@@ -771,6 +771,10 @@ void Game::UpdateFlickerVariable()
             m_targetFrameRate = amplitude * sin(angle) + baseline;
         }
         break;
+
+        case WaveEnum::Max:
+            m_targetFrameRate = m_maxFrameRate;
+            break;
     }
 
     m_targetFrameTime = 1.0 / m_targetFrameRate;
@@ -856,24 +860,27 @@ void Game::UpdateGrayToGray()
 void Game::UpdateFrameDrop()
 {
     // determine what rate to use based on the up/down arrow key setting
-    switch (m_frameDropRateIndex)
+    switch (m_frameDropRateEnum)
     {
-    case 0:
+    case DropRateEnum::Max:
         m_targetFrameRate = m_maxFrameRate;       // max reported by implementation
         break;
-    case 1:                                       // stress test alternating between 24 and max
+    case DropRateEnum::SquareWave:                // stress test alternating between 24 and max
         if (m_frameCounter & 0x01)                // alternate between 24Hz and Max
             m_targetFrameRate = 48.0;
         else
             m_targetFrameRate = m_maxFrameRate;
         break;
-    case 2:
-        m_targetFrameRate = 48;
-        break;
-    case 3:
+    case DropRateEnum::Random:                    // pick a random frame duration within the valid range
         m_targetFrameRate = 60;
         break;
-    case 4:
+    case DropRateEnum::p48fps:
+        m_targetFrameRate = 48;
+        break;
+    case DropRateEnum::p60fps:
+        m_targetFrameRate = 60;
+        break;
+    case DropRateEnum::p72fps:
         m_targetFrameRate = 72;
         break;
     }
@@ -1053,20 +1060,26 @@ void Game::ChangeSubtest(bool increment)
     case TestPattern::FlickerVariable:                                                          // 3
         if (increment)
         {
-            unsigned int testInt = static_cast<unsigned int>(m_waveEnum) + 1;
-            m_waveEnum = static_cast<WaveEnum>(testInt);
-            if (m_waveEnum == WaveEnum::Max )
+            if (m_waveEnum == WaveEnum::Max)        // if at last one, then
             {
-                m_waveEnum = WaveEnum::ZigZag;      // wrap to the beginning
+                m_waveEnum = WaveEnum::ZigZag;      // wrap to the first
+            }
+            else
+            {
+                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) + 1;
+                m_waveEnum = static_cast<WaveEnum>(testInt);
             }
         }
         else
         {
-            unsigned int testInt = static_cast<unsigned int>(m_waveEnum) - 1;
-            m_waveEnum = static_cast<WaveEnum>(testInt);
-            if (m_waveEnum == WaveEnum::Nil )
+            if (m_waveEnum == WaveEnum::ZigZag )    // if at first one, then
             {
-                m_waveEnum = WaveEnum::Sine;       // wrap to the last
+                m_waveEnum = WaveEnum::Max;       // wrap to the last
+            }
+            else
+            {
+                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) - 1;
+                m_waveEnum = static_cast<WaveEnum>(testInt);
             }
         }
         ResetFrameStats();
@@ -1098,17 +1111,28 @@ void Game::ChangeSubtest(bool increment)
     case TestPattern::FrameDrop:                                                                // 6
         if (increment)
         {
-            m_frameDropRateIndex++;
-            if (m_frameDropRateIndex > numFrameDropRates-1)
-                m_frameDropRateIndex = 0;
+            if (m_frameDropRateEnum == DropRateEnum::p72fps)         // if at the last
+            {
+                m_frameDropRateEnum = DropRateEnum::Max;            // wrap to the first
+            }
+            else
+            {
+                unsigned int testInt = static_cast<unsigned int>(m_frameDropRateEnum) + 1;
+                m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
+            }
         }
         else
         {
-            m_frameDropRateIndex--;
-            if (m_frameDropRateIndex < 0)
-                m_frameDropRateIndex = numFrameDropRates-1;
+            if (m_frameDropRateEnum == DropRateEnum::Max)           // if at the first
+            {
+                m_frameDropRateEnum = DropRateEnum::p72fps;          // wrap to the last
+            }
+            else
+            {
+                unsigned int testInt = static_cast<unsigned int>(m_frameDropRateEnum) - 1;
+                m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
+            }
         }
-        m_frameDropRateIndex = m_frameDropRateIndex % numFrameDropRates;
         break;
 
     case TestPattern::FrameLock:        // use media frame rates here                           // 7
@@ -1772,6 +1796,12 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         case WaveEnum::Sine:
             title << L"-Sine Wave\n";
             break;
+        case WaveEnum::Max:
+            title << L"-Max\n";
+            break;
+        default:
+            title << L"  E R R O R ! \n";
+            break;
         }
 
         title << fixed;
@@ -2159,6 +2189,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 
 }
 
+#define EXPOSURE_TIME (0.25) // time camera aperture is open -in seconds
 void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)                        	//********************** 6
 {
     if (m_newTestSelected)
@@ -2174,45 +2205,142 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
 
     float c = nitstoCCCS(nits);
     c = 0.50f;
-    int nRows, nCols, nCells;
 
-    // figure out number of squares to draw
-    double targetFrameRate = m_targetFrameRate;
-    double cells = targetFrameRate;
+    int nRows, iCol, nCols, jRow, nCells;
+    float2 step;
 
-    double avgFrameTime = (1.0/m_maxFrameRate + 1.0/48.0) * 0.5;
-    double avgFrameRate = 1.0 / avgFrameTime;
-    if (m_frameDropRateIndex == 1)
+    switch( m_frameDropRateEnum )
     {
+    case DropRateEnum::Max:
+    case DropRateEnum::p48fps:
+    case DropRateEnum::p60fps:
+    case DropRateEnum::p72fps:
+    {
+        // figure out number of squares to draw
+        double cells = m_targetFrameRate * EXPOSURE_TIME;     // works for 1/4 second exposure time on my phone
+
+        // compute rows and columns for this many cells
+        nCells = round(cells);
+        nRows = floor(sqrt(cells)) + 1;
+        nCols = nCells / nRows;
+        // if it's not an integer match, then keep trying smaller values
+        while (nRows * nCols != nCells)
+        {
+            nRows--;
+            nCols = nCells / nRows;
+        }
+        if (nRows > nCols)
+            swap(nRows, nCols);
+
+        // compute size of rectangle to draw
+        step.x = (logSize.right - logSize.left) / nCols;
+        step.y = (logSize.bottom - logSize.top) / nRows;
+
+        // compute position for current square 
+        iCol = m_frameCounter % nCols;
+        jRow = (m_frameCounter / nCols) % nRows;
+
+        if (iCol == 0)
+            m_sweepPos = 0;
+
+        break;
+    }
+
+    case DropRateEnum::Random:
+    {
+//      select a frame time between min and max with uniform distribution
+//      Compute xy based on that
+//      if it fits in the row, add it
+//      if the next one would not fit, and this one would if extended something less than max, then extend.
+
+        // figure out number of squares to draw
+        double targetFrameRate = m_targetFrameRate;
+        double cells = targetFrameRate * EXPOSURE_TIME;
+
+        double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
+        double avgFrameRate = 1.0 / avgFrameTime;
         targetFrameRate = avgFrameRate;
         cells = avgFrameRate;
-    }
 
-    // compute rows and columns for this many cells
-    nCells = round( cells );
-    nRows = floor( sqrt( cells ) ) + 1;
-    nCols = nCells/nRows;
-    // if it's not an integer match, then keep trying smaller values
-    while (nRows * nCols != nCells)
-    {
-        nRows--;
+        // compute rows and columns for this many cells
+        nCells = round(cells);
+        nRows = floor(sqrt(cells)) + 1;
         nCols = nCells / nRows;
-    }
+        // if it's not an integer match, then keep trying smaller values
+        while (nRows * nCols != nCells)
+        {
+            nRows--;
+            nCols = nCells / nRows;
+        }
+        if (nRows > nCols)
+            swap(nRows, nCols);
 
-    // compute size of square to draw
-    float2 step;
-    step.x = (logSize.right - logSize.left) / nCols;
-    step.y = (logSize.bottom - logSize.top) / nRows;
+        // compute size of square to draw
+        step.x = (logSize.right - logSize.left) / nCols;
+        step.y = (logSize.bottom - logSize.top) / nRows;
 
-    // if we are on the last case, then run stress test with alternating min/max frame intervals
-    if (m_frameDropRateIndex == 1)
-    {
         step.x *= m_targetFrameTime / avgFrameTime;
         c = 0.5 * avgFrameTime / m_targetFrameTime;     // this may need to be done in linear not gamma space in SDR mode
+
+        // compute position for current square 
+        iCol = m_frameCounter % nCols;
+        jRow = (m_frameCounter / nCols) % nRows;
+
+        if (iCol == 0)
+            m_sweepPos = 0;
+
+        break;
     }
 
+    case DropRateEnum::SquareWave:
+    {
+        // figure out number of squares to draw
+        double targetFrameRate = m_targetFrameRate;
+        double cells = targetFrameRate * EXPOSURE_TIME;
+
+        double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
+        double avgFrameRate = 1.0 / avgFrameTime;
+        targetFrameRate = avgFrameRate;
+        cells = avgFrameRate;
+
+        // compute rows and columns for this many cells
+        nCells = round(cells);
+        nRows = floor(sqrt(cells)) + 1;
+        nCols = nCells / nRows;
+        // if it's not an integer match, then keep trying smaller values
+        while (nRows * nCols != nCells)
+        {
+            nRows--;
+            nCols = nCells / nRows;
+        }
+        if (nRows > nCols)
+            swap(nRows, nCols);
+
+        // compute size of square to draw
+        step.x = (logSize.right - logSize.left) / nCols;
+        step.y = (logSize.bottom - logSize.top) / nRows;
+
+        step.x *= m_targetFrameTime / avgFrameTime;
+        c = 0.5 * avgFrameTime / m_targetFrameTime;     // this may need to be done in linear not gamma space in SDR mode
+
+        // compute position for current square 
+        iCol = m_frameCounter % nCols;
+        jRow = (m_frameCounter / nCols) % nRows;
+
+        if (iCol == 0)
+            m_sweepPos = 0;
+
+        break;
+    }
+
+    default:
+        // should assert here
+        break;
+ 
+    }  // switch
+
     // draw a checkerboard background for reference
-//#define DRAW_CHECKER_BACKGROUND
+//#define DRAW_CHECKER_BACKGROUND  // only works for regular spacing case, not random case
 #ifdef DRAW_CHECKER_BACKGROUND
     for (int jRow = 0; jRow < nRows; jRow++)
     {
@@ -2232,13 +2360,8 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         }
     }
 #endif
-    // compute position for current square 
-    int iCol = m_frameCounter % nCols;
-    int jRow = (m_frameCounter / nCols) % nRows;
 
-    if (iCol == 0)
-        m_sweepPos = 0;
-
+    // construct the rect now we know the dimensions
     D2D1_RECT_F rect =
     {
         m_sweepPos,
@@ -2256,7 +2379,32 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
-        title << L"6 Frame Drop Test\n";
+        title << L"6 Frame Drop Test:  ";
+        switch (m_frameDropRateEnum)
+        {
+        case DropRateEnum::Max:
+            title << L"-Max\n";
+            break;
+        case DropRateEnum::Random:
+            title << L"-Random\n";
+            break;
+        case DropRateEnum::SquareWave:
+            title << L"-Square Wave\n";
+            break;
+        case DropRateEnum::p48fps:
+            title << L"-fixed 48fps\n";
+            break;
+        case DropRateEnum::p60fps:
+            title << L"-fixed 60fps\n";
+            break;
+        case DropRateEnum::p72fps:
+            title << L"-fixed 72fps\n";
+            break;
+        default:
+            title << L"  E R R O R ! \n";
+            break;
+        }
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";

@@ -105,14 +105,23 @@ public:
 
     Game(PWSTR appTitle);
 
-    enum class WaveEnum
+    enum class WaveEnum             // for Variable Rate Flicker Test                                   3
     {
-        Nil,
         ZigZag,
         SquareWave,
         Random,
         Sine,
         Max,
+    };
+
+    enum class DropRateEnum         // for variable rate frame drop test                                6
+    {
+        Max,
+        Random,
+        SquareWave,
+        p48fps,
+        p60fps,
+        p72fps,
     };
 
 	enum class TestPattern
@@ -325,7 +334,7 @@ private:
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
     bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
 
-    INT32                       m_frameDropRateIndex;       // select frame rate in frame drop test             6
+    DropRateEnum                m_frameDropRateEnum;        // select frame rate in frame drop test             6
 
     INT32                       m_frameLockRateIndex;       // select frame rate in frame lock test             7
     INT32                       m_mediaRateIndex;           // ??
