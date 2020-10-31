@@ -21,6 +21,10 @@
 #define LS_CMD_BOOT_LOADER       13
 #define LS_CMD_LATENCY_AUTO_FIRE 14 // click the mouse and then measure latency
 #define LS_CMD_LATENCY_IMMEDIATE 15 // start measuring latency right away
+#define LS_CMD_SET_LUM_THRESHOLD 19
+#define LS_CMD_READ_ADC          30
+
+const float CALIBRATION_SCALER = 5000.0f;
 
 #define FW_UPDATE_VERSION        14
 #define HW_SUPPORTED_VERSION      4
@@ -83,7 +87,7 @@ float Sensor::ReadLatency()
         {
             n = 0;
             int msb = 0;
-            Sleep(1);
+            Sleep(2);
             ReadFile(hFile, &msb, 1, &n, NULL);
             if (n)
             {
@@ -104,6 +108,40 @@ float Sensor::ReadLatency()
     float lat = (float)(RAW_TO_SEC * rawLat);
 
     return lat;
+}
+
+float Sensor::ReadLuminance()
+{
+    if (hwVer < 5)
+    {
+        return 0;
+    }
+
+    SendCommand(LS_CMD_READ_ADC);
+
+    int16_t v;
+    DWORD n = 0;
+    ReadFile(hFile, &v, 2, &n, NULL);
+
+    return adcToNits * v;
+}
+
+void Sensor::SetActivationThreshold(float nits)
+{
+    uint16_t v;
+
+    // convert from nits to raw adc values
+    v = (int)(nits / adcToNits + 0.5f);
+
+    if (hwVer < 5)
+    {
+        v /= 4;
+    }
+
+    SendCommand(LS_CMD_SET_LUM_THRESHOLD);
+
+    DWORD n = 0;
+    WriteFile(hFile, &v, 2, &n, NULL);
 }
 
 void Sensor::SendCommand(int cmd)
@@ -138,12 +176,14 @@ bool Sensor::Connect(int com)
         NULL);
     if (hFile == INVALID_HANDLE_VALUE)
     {
-        if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+        DWORD error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND)
+        {
             printf("COM%d: not available.\n", com);
         }
         else
         {
-            printf("COM%d: error 0x%x.\n", com, (int)hFile);
+            printf("COM%d: error 0x%x.\n", com, error);
         }
         hFile = INVALID_HANDLE_VALUE;
         return false;
@@ -199,7 +239,7 @@ void Sensor::SetTimeOuts(int v)
         puts("Could not set the COM timeouts.");
     }
 }
-
+#if 0
 void Sensor::UpdateFirmware(int hwVer) // Expects no time outs
 {
     char romName[64];
@@ -321,6 +361,7 @@ void Sensor::UpdateFirmware(int hwVer) // Expects no time outs
 
     Sleep(100);
 }
+#endif
 
 bool Sensor::QueryVersion()
 {
@@ -334,29 +375,36 @@ bool Sensor::QueryVersion()
     {
         bool hasCalibration = false;
 
-        int devId = (deviceVer >> 8) & 0xFF;
-        int hwVer = (deviceVer >> 16) & 0xFF;
-        int fwVer = deviceVer >> 24;
+        devId = (deviceVer >> 8) & 0xFF;
+        hwVer = (deviceVer >> 16) & 0xFF;
+        fwVer = deviceVer >> 24;
 
-        if (hwVer != HW_SUPPORTED_VERSION)
-        {
-            printf("Unsupported Sensor HW %d. Use a Sensor HW revision %d.\n", hwVer, HW_SUPPORTED_VERSION);
-            return false;
-        }
+        printf("LDAT HW: %d, FW: %d, Dev ID: %d\n", hwVer, fwVer, devId);
 
-        if (fwVer < FW_UPDATE_VERSION)
-        {
-            UpdateFirmware(hwVer);
-            return QueryVersion();
-        }
-
-        printf("Sensor HW: %d, FW: %d, Dev ID: %d\n", hwVer, fwVer, devId);
-
-        int cal;
-        int offset;
+        unsigned int cal = 0;
+        int16_t offset = 0;
 
         ReadFile(hFile, &cal, 2, &n, NULL);
-        ReadFile(hFile, &offset, 1, &n, NULL);
+        if (cal > 0 && cal != 0xFFFF)
+        {
+            if (hwVer < 5)
+            {
+                const float REF_NITS = 335;
+                adcToNits = REF_NITS * (16.0f / cal);
+            }
+            else
+            {
+                adcToNits = (float)cal / CALIBRATION_SCALER;
+            }
+        }
+        else
+        {
+            adcToNits = 0.25f;
+        }
+
+        n = hwVer >= 5 ? 2 : 1;
+        ReadFile(hFile, &offset, n, &n, NULL);
+
 
         return true;
     }

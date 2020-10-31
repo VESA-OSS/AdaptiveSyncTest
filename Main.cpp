@@ -277,6 +277,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_DESTROY:
 		game->SetMetadataNeutral();		// DWM should do this automatically on full-screen exit
+        game->DisconnectSensor();
         PostQuitMessage(0);
         break;
 

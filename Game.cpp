@@ -63,7 +63,7 @@ void Game::ConstructorInternal()
     m_currentTest = TestPattern::StartOfTest;
     m_flickerRateIndex = 0;		// select between min, max, etc for Flicker test                    2
     m_waveCounter = SQUARE_COUNT;
-    m_waveEnum = WaveEnum::SquareWave; // default                                                   3
+    m_waveEnum = WaveEnum::ZigZag; // default                                                       3
     m_waveUp = true;            // for use in zigzag wave                                           3
 
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
@@ -71,6 +71,7 @@ void Game::ConstructorInternal()
 
     m_latencyTestFrameRate = 60.;//                                                                 4
     m_sensorConnected = false;  //
+    m_sensorNits = 30.0f;       // threshold for detection by sensor in nits                        4
     m_sensing = false;          // 
     m_flash = false;            // whether we are flashing the photocell this frame                 4
     ResetSensorStats();         // initialize the sensor tracking data                              4
@@ -399,7 +400,6 @@ bool Game::isMedia()
 void Game::Tick()
 {
     double frameTime;                               // local variable for comparison
-    Sensor sensor;                                  // external photocell devicep
     double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
 
     // Update with data from last frame
@@ -424,15 +424,12 @@ void Game::Tick()
             // if there should be a flash this frame, reconnect the sensor (should not be required every frame)
             if (m_flash)
             {
-#if 1
-                m_sensorConnected = sensor.ConnectSensor();
-#else
+                // make sure we are still connected (should never happen in real life)
                 if  ( !m_sensorConnected )
                 {
-                    m_sensorConnected = sensor.ConnectSensor();
+                    m_sensorConnected = m_sensor.ConnectSensor();
+                    m_sensor.SetActivationThreshold( m_sensorNits );
                 }
-//              Sleep(100);
-#endif
             }
 
             // advance printout columns to current frame
@@ -454,9 +451,9 @@ void Game::Tick()
             // Draw
             Render();                                       // this is before we have all values for this frame
 
-            // if there should be a flash this frame, start measuring.
+            // if there should be a flash this frame, start measuring
             if (m_flash)
-                sensor.StartLatencyMeasurement(LatencyType_AutoClick);
+                m_sensor.StartLatencyMeasurement(LatencyType_AutoClick);
 
             // Show the new frame
             m_deviceResources->Present();
@@ -467,8 +464,8 @@ void Game::Tick()
             // if this was a frame that included a flash, then read the photocell's measurement
             if (m_flash)
             {
-                float sensorTime = 0.f;                             // time from sensor in seconds
-                sensorTime = sensor.ReadLatency();                  // blocking call
+                float sensorTime = 0.f;                               // time from sensor in seconds
+                sensorTime = m_sensor.ReadLatency();                  // blocking call
 
                 if ((sensorTime > 0.001) && (sensorTime < 0.100))     // if valid, run the stats on it
                 {
@@ -486,6 +483,7 @@ void Game::Tick()
                         m_maxSensorTime = sensorTime;
                 }
             }
+            Sleep(15);
         }
         else      // we are not using the sensor, just track in-PC timings
         {
@@ -688,7 +686,7 @@ void Game::TickOld()
 }
 
 // Every test pattern could have an update routine to call in the main update routine in Tick()
-void Game::UpdateFlickerConstant()
+void Game::UpdateFlickerConstant()                                                                      //  2
 {
     // determine what rate to use based on the up/down arrow key setting
     switch (m_flickerRateIndex)
@@ -701,20 +699,9 @@ void Game::UpdateFlickerConstant()
         m_targetFrameRate = m_maxFrameRate;        // max reported by implementation
         break;
 
-    case 2:                                 // 24 if supported, else 48.
-        if (m_minFrameRate <= 24.0)
-            m_targetFrameRate = 24.0f;
-        else
-            if (m_minFrameRate <= 48.0)
-                m_targetFrameRate = 48.0f;
-            else
-                m_targetFrameRate = m_minFrameRate;
+    default:
+        m_targetFrameRate = mediaFrameRates[m_flickerRateIndex - 2];
         break;
-
-    case 3:
-        m_targetFrameRate = 120.0f;                // hard coded at 120Hz for stress test
-        break;
-
     }
 
     m_targetFrameTime = 1.0 / m_targetFrameRate;
@@ -726,24 +713,6 @@ void Game::UpdateFlickerVariable()
 {
     switch (m_waveEnum)
     {
-        case WaveEnum::SquareWave:
-        {
-            m_waveCounter--;
-            if (m_waveCounter >= 0)
-            {
-                if (m_waveUp)
-                    m_targetFrameRate = m_maxFrameRate;
-                else
-                    m_targetFrameRate = m_minFrameRate;
-            }
-            else
-            {
-                m_waveUp = !m_waveUp;           // toggle to wave down
-                m_waveCounter = SQUARE_COUNT;   // reset counter
-            }
-        }
-        break;
-
         case WaveEnum::ZigZag:    // zig-zag not square wave
         {
             if (m_waveUp)
@@ -763,6 +732,24 @@ void Game::UpdateFlickerVariable()
                     m_targetFrameRate = m_minFrameRate;
                     m_waveUp = true;
                 }
+            }
+        }
+        break;
+
+        case WaveEnum::SquareWave:
+        {
+            m_waveCounter--;
+            if (m_waveCounter > 0)
+            {
+                if (m_waveUp)
+                    m_targetFrameRate = m_maxFrameRate;
+                else
+                    m_targetFrameRate = m_minFrameRate;
+            }
+            else
+            {
+                m_waveUp = !m_waveUp;           // toggle to wave down
+                m_waveCounter = SQUARE_COUNT;   // reset counter
             }
         }
         break;
@@ -872,109 +859,26 @@ void Game::UpdateFrameDrop()
     switch (m_frameDropRateIndex)
     {
     case 0:
-        m_targetFrameRate = 12;
-        break;
-    case 1:
-        m_targetFrameRate = 24;
-        break;
-    case 2:
-        m_targetFrameRate = 30;
-        break;
-    case 3:
-        m_targetFrameRate = 48;
-        break;
-    case 4:
-        m_targetFrameRate = 60;
-        break;
-    case 5:
-        m_targetFrameRate = 72;
-        break;
-    case 6:
-        m_targetFrameRate = 120;
-        break;
-    case 7:
-        m_targetFrameRate = 180;
-        break;
-    case 8:
-        m_targetFrameRate = 240;
-        break;
-    case 9:
         m_targetFrameRate = m_maxFrameRate;       // max reported by implementation
         break;
-    case 10:                                // stress test alternating between 24 and max
-        if (m_frameCounter & 0x01)          // alternate between 24Hz and Max
+    case 1:                                       // stress test alternating between 24 and max
+        if (m_frameCounter & 0x01)                // alternate between 24Hz and Max
             m_targetFrameRate = 48.0;
         else
             m_targetFrameRate = m_maxFrameRate;
         break;
+    case 2:
+        m_targetFrameRate = 48;
+        break;
+    case 3:
+        m_targetFrameRate = 60;
+        break;
+    case 4:
+        m_targetFrameRate = 72;
+        break;
     }
 
     m_targetFrameTime = 1.0 / m_targetFrameRate;
-
-
-/*  float refreshRate = 60.0f;
-
-    // decide shape of grid for test pattern
-    int nCols = 10;
-    int nRows = 6;
-    switch (m_frameDropRateIndex)       // logic re frame rate should move into Update(); logic re tile dimensions could stay here.
-    {
-    case 0:
-        refreshRate = 24.0f;
-        nCols = 6;
-        nRows = 4;
-        break;
-
-    case 1:
-        refreshRate = 30.0f;
-        nCols = 6;
-        nRows = 5;
-        break;
-
-    case 2:
-        refreshRate = 48.0f;
-        nCols = 8;
-        nRows = 6;
-        break;
-
-    case 3:
-        refreshRate = 60.0f;
-        nCols = 10;
-        nRows = 6;
-        break;
-
-    case 4:
-        refreshRate = 90.0f;
-        nCols = 10;
-        nRows = 9;
-        break;
-
-    case 5:
-        refreshRate = 120.0f;
-        nCols = 12;
-        nRows = 10;
-        break;
-
-    case 6:
-        refreshRate = 180.0f;
-        nCols = 15;
-        nRows = 12;
-        break;
-
-    case 7:
-        refreshRate = 240.0f;
-        nCols = 16;
-        nRows = 15;
-        break;
-
-    default:
-        refreshRate = 60.0f;
-        nCols = 10;
-        nRows = 6;
-        break;
-    }
-    m_targetFrameRate = refreshRate;
-    */
 }
 
 
@@ -1133,16 +1037,16 @@ void Game::ChangeSubtest(bool increment)
         if (increment)
         {
             m_flickerRateIndex++;
-            if (m_flickerRateIndex > numFlickerRates-1)
+            if (m_flickerRateIndex > numMediaRates + 1)     // add 2 for min/max
                 m_flickerRateIndex = 0;
         }
         else
         {
             m_flickerRateIndex--;
             if (m_flickerRateIndex < 0)
-                m_flickerRateIndex = numFlickerRates-1;
+                m_flickerRateIndex = numMediaRates + 1;     // add 2 for min/max
         }
-        m_flickerRateIndex = m_flickerRateIndex % (numFlickerRates+1);
+//      m_flickerRateIndex = m_flickerRateIndex % (numMediaRates + 1);
         ResetFrameStats();
         break;
 
@@ -1153,7 +1057,7 @@ void Game::ChangeSubtest(bool increment)
             m_waveEnum = static_cast<WaveEnum>(testInt);
             if (m_waveEnum == WaveEnum::Max )
             {
-                m_waveEnum = WaveEnum::SquareWave;      // wrap to the beginning
+                m_waveEnum = WaveEnum::ZigZag;      // wrap to the beginning
             }
         }
         else
@@ -1366,23 +1270,23 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     auto sc = m_deviceResources->GetSwapChain();
     DX::ThrowIfFailed(sc->GetContainingOutput(&output));
 
-    UINT num = 0;
+    UINT numModes = 0;
     UINT flags = 0;
 
     // first call to get the number of modes in this format
-    output->GetDisplayModeList(format, flags, &num, 0);
+    output->GetDisplayModeList(format, flags, &numModes, 0);
 
     // second call collects them into an array
-    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[num];
-    output->GetDisplayModeList(format, flags, &num, pDescs);
+    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[numModes];
+    output->GetDisplayModeList(format, flags, &numModes, pDescs);
 
     m_minFrameRate = 1000000;       // 1 million
     m_maxFrameRate = 0;
-    for (int i = 0; i < num; i++)
+    for (int iMode = 0; iMode < numModes; iMode++)
     {
-        if (pDescs[i].Width == m_modeWidth && pDescs[i].Height == m_modeHeight)
+        if (pDescs[iMode].Width == m_modeWidth && pDescs[iMode].Height == m_modeHeight)
         {
-            double rate = (double)pDescs[i].RefreshRate.Numerator / (double)pDescs[i].RefreshRate.Denominator;
+            double rate = (double)pDescs[iMode].RefreshRate.Numerator / (double)pDescs[iMode].RefreshRate.Denominator;
             if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
             if (rate < m_minFrameRate) m_minFrameRate = rate;
         }
@@ -1391,7 +1295,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.75\n\n";
+    text << L"\n\nVersion 0.78\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1489,24 +1393,24 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
     auto sc = m_deviceResources->GetSwapChain();
     DX::ThrowIfFailed(sc->GetContainingOutput(&output));
 
-    UINT num = 0;
+    UINT numModes = 0;
     UINT flags = 0;
 
     // first call to get the number of modes in this format
-    output->GetDisplayModeList(format, flags, &num, 0);
+    output->GetDisplayModeList(format, flags, &numModes, 0);
 
     // second call collects them into an array
-    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[num];
-    output->GetDisplayModeList(format, flags, &num, pDescs);
+    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[numModes];
+    output->GetDisplayModeList(format, flags, &numModes, pDescs);
 
     m_minFrameRate = 1000000;       // 1 million
     m_maxFrameRate = 0;
-    for (int i = 0; i < num; i++)
+    for (int iMode = 0; iMode < numModes; iMode++)
     {
-        if (pDescs[i].Width == m_modeWidth && pDescs[i].Height == m_modeHeight)
+        if (pDescs[iMode].Width == m_modeWidth && pDescs[iMode].Height == m_modeHeight)
         {
-            double rate = (double)pDescs[i].RefreshRate.Numerator
-                        / (double)pDescs[i].RefreshRate.Denominator;
+            double rate = (double)pDescs[iMode].RefreshRate.Numerator
+                        / (double)pDescs[iMode].RefreshRate.Denominator;
             text << fixed << setw(10) << setprecision(4) << rate << "Hz\n";
 
             if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
@@ -1746,8 +1650,6 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 
 // Flicker test -fixed frame rates:
 // Just draws the screen at about 10nits luminance in either HDR or SDR mode
-// Refresh rates should be 4 options:
-//    min reported, max reported, 60Hz, 24 if possible, else 48.
 void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			        	// 2
 {
     if (m_newTestSelected)
@@ -1780,13 +1682,14 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
         title << L"2 Flicker at Constant Refresh Rate: ";
         switch (m_flickerRateIndex)
         {
-        case 0: title << " Min\n";   break;
-        case 1: title << " Max\n";   break;
-        case 2: title << " p60\n";   break;
-        case 3: title << " 24/48\n"; break;
-        case 4: title << " p120\n";  break;
+        case 0: title << " Min";   break;
+        case 1: title << " Max";   break;
+        default:     break;
         }
-        title << fixed;
+        if (m_targetFrameRate < (m_minFrameRate-0.1) )
+            title << " Below Min - likely doubled.";
+
+        title << fixed << "\n";
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << m_targetFrameTime * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
@@ -1858,10 +1761,10 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         switch (m_waveEnum)
         {
         case WaveEnum::ZigZag:
-            title << L"-Zig Zag\n";
+            title << L"-Zig Zag  " << (m_waveUp ? " +\n" : "-\n");
             break;
         case WaveEnum::SquareWave:
-            title << L"-Square Wave\n";
+            title << L"-Square Wave  " << (m_waveUp ? "+" : "-") << setw(m_waveCounter) << m_waveCounter << "\n";
             break;
         case WaveEnum::Random:
             title << L"-Random\n";
@@ -1916,6 +1819,11 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 {
     if (m_newTestSelected)
     {
+        // be sure to connect to sensor on entering this test
+       if ( !m_sensorConnected )
+            m_sensorConnected = m_sensor.ConnectSensor();
+        m_sensor.SetActivationThreshold( m_sensorNits );
+
         ResetFrameStats();
         ResetSensorStats();
     }
@@ -1999,7 +1907,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             if (m_sensorConnected)
             {
                 // print total end-to-end latency stats from sensor
-                title << " S E N S I N G . . .\n";
+                title << " S E N S I N G  @ " << setprecision(0) << m_sensorNits << "Nits threshold\n";
                 title << "Over last " << m_sensorCount << " samples\n";
                 title << "Average:   " << setprecision(3) << setw(7);
                 title << avgSensorTime * 1000.0;
@@ -2012,7 +1920,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 title << varSensorTime * 1000.0;
             }
             else
-                title << "\n    Please Attach a photocell sensor.\n";
+                title << "\n    Please attach a photocell Sensor.\n";
         }
         else
         {
@@ -2152,7 +2060,13 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)                         //**************** 5.
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+    {
+        if (m_sensorConnected)
+        {
+//          m_sensor.Disconnect();
+            ResetFrameStats();
+        }
+    }
 
     // compute brush for surround - 
     float c;
@@ -2263,14 +2177,20 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
     int nRows, nCols, nCells;
 
     // figure out number of squares to draw
-    double avgFrameRate = (m_maxFrameRate + 24.0) * 0.5;
     double targetFrameRate = m_targetFrameRate;
-    if (m_frameDropRateIndex == numFrameDropRates - 1)
+    double cells = targetFrameRate;
+
+    double avgFrameTime = (1.0/m_maxFrameRate + 1.0/48.0) * 0.5;
+    double avgFrameRate = 1.0 / avgFrameTime;
+    if (m_frameDropRateIndex == 1)
+    {
         targetFrameRate = avgFrameRate;
-        
-    double cells = targetFrameRate * 0.25;            // for 1/4 second exposure per frame
+        cells = avgFrameRate;
+    }
+
+    // compute rows and columns for this many cells
     nCells = round( cells );
-    nRows = floor( sqrt( cells ) );
+    nRows = floor( sqrt( cells ) ) + 1;
     nCols = nCells/nRows;
     // if it's not an integer match, then keep trying smaller values
     while (nRows * nCols != nCells)
@@ -2285,13 +2205,14 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
     step.y = (logSize.bottom - logSize.top) / nRows;
 
     // if we are on the last case, then run stress test with alternating min/max frame intervals
-    if (m_frameDropRateIndex == numFrameDropRates - 1)
+    if (m_frameDropRateIndex == 1)
     {
-        step.x *= avgFrameRate / m_targetFrameRate;
-        c = 0.5 * m_targetFrameRate / avgFrameRate;     // this may need to be done in linear not gamma space in SDR mode
+        step.x *= m_targetFrameTime / avgFrameTime;
+        c = 0.5 * avgFrameTime / m_targetFrameTime;     // this may need to be done in linear not gamma space in SDR mode
     }
 
     // draw a checkerboard background for reference
+//#define DRAW_CHECKER_BACKGROUND
 #ifdef DRAW_CHECKER_BACKGROUND
     for (int jRow = 0; jRow < nRows; jRow++)
     {
@@ -2421,8 +2342,8 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
 
     case 7:
         m_targetFrameRate = 50.0f;
-        nCols = 8;
-        nRows = 6;
+        nCols = 10;
+        nRows = 5;
         break;
 
     case 8:
@@ -3215,6 +3136,11 @@ void Game::LoadEffectResources(TestPatternResources* resources)
     }
 }
 
+void Game::DisconnectSensor(void)
+{
+    m_sensor.~Sensor();
+}
+
 void Game::OnDeviceLost()
 {
     m_gradientBrush.Reset();
@@ -3295,6 +3221,9 @@ void Game::ChangeTestPattern(bool increment)
             m_currentTest = static_cast<TestPattern>(testInt);
         }
     }
+
+    // stop sensing if we switch tests
+    m_sensing = false;
 
     //	m_showExplanatoryText = true;
     m_newTestSelected = true;

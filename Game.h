@@ -52,13 +52,11 @@ private:
         GAMUT_ACES   = 5,
     };
 
-    // each test indexes into these arrays using its currentRateIndex
-#define numFlickerRates 5           // number of frame rates in FlickerConstant test                2
-
+// Media rate Flicker test indexes into these arrays using its FlickerRateIndex
 #define numMediaRates 10            // number of frame rates in the media rate test                 7
     float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f };
 
-#define numFrameDropRates 11        // number of frame rates in the FrameDrop test                  6
+#define numFrameDropRates 5         // number of frame rates in the FrameDrop test                  6
 //  float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
 
 #define maxSleepDelay 120.          // ms
@@ -110,8 +108,8 @@ public:
     enum class WaveEnum
     {
         Nil,
-        SquareWave,
         ZigZag,
+        SquareWave,
         Random,
         Sine,
         Max,
@@ -171,6 +169,7 @@ public:
     void ToggleSensing(void);
     void ToggleAutoG2G(void);
     void ResetCurrentStats(void);                     // reset whichever stats are currently in use
+    void DisconnectSensor(void);
 
     void ChangeGradientColor(float deltaR, float deltaG, float deltaB);
     void ChangeBackBufferFormat(DXGI_FORMAT fmt);
@@ -307,8 +306,11 @@ private:
     INT32                       m_waveCounter;              // control for square wave                          3
     WaveEnum                    m_waveEnum;                 // zigzag vs square wave vs random                  3
     bool                        m_waveUp;                   // zig up or down
+
     INT32                       m_latencyRateIndex;         // select frame rate in frame latency test          4
     double                      m_latencyTestFrameRate;     // frame rate specific to this test pattern         4
+    Sensor                      m_sensor;                   // the LDAT or similar device we are using          4
+    float                       m_sensorNits;               // threshold for detection by sensor in nits        4
     bool                        m_sensorConnected;          // connection to the photocell dongle is live       4
     bool                        m_sensing;                  // whether we are running the sensor                4
     bool                        m_flash;                    // whether we are flashing the photocell this frame 4

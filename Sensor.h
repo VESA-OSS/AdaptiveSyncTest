@@ -30,13 +30,19 @@ public:
     bool ConnectSensor();
     void StartLatencyMeasurement(ELatencyType type);
     float ReadLatency();
+    float ReadLuminance();
+    void SetActivationThreshold(float nits);
 private:
     void SendCommand(int cmd);
     void Disconnect();
     bool Connect(int com);
     void SetTimeOuts(int v = 3);
-    void UpdateFirmware(int hwVer);
+//  void UpdateFirmware(int hwVer);
     bool QueryVersion();
 
     HANDLE hFile;
+    int devId;
+    int hwVer;
+    int fwVer;
+    float adcToNits;
 };
