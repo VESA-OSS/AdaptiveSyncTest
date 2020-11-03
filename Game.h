@@ -201,6 +201,8 @@ private:
     void UpdateFlickerVariable();                               // Set frame time for variable rate flicker         3
     void UpdateGrayToGray();                                    // Handle the updates for G2G test                  5
     void UpdateFrameDrop();                                     // Set a frame time for Frame Drop test             6
+    void InitBitTable();                                        // Set all bits to 50/50 true/false                 6
+    void ShuffleBitTable( int nCols, int nRows );               // Mix up the first nCol elements in each row       6
 
     void InitEffectiveValues();
     void SetMetadata(float max, float avg, ColorGamut gamut);
@@ -335,6 +337,7 @@ private:
     bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
 
     DropRateEnum                m_frameDropRateEnum;        // select frame rate in frame drop test             6
+    bool                        m_bitTable[32][32];         // table to randomize frame durations               6
 
     INT32                       m_frameLockRateIndex;       // select frame rate in frame lock test             7
     INT32                       m_mediaRateIndex;           // ??

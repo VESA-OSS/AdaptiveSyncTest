@@ -71,7 +71,7 @@ void Game::ConstructorInternal()
 
     m_latencyTestFrameRate = 60.;//                                                                 4
     m_sensorConnected = false;  //
-    m_sensorNits = 30.0f;       // threshold for detection by sensor in nits                        4
+    m_sensorNits = 27.0f;       // threshold for detection by sensor in nits                        4
     m_sensing = false;          // 
     m_flash = false;            // whether we are flashing the photocell this frame                 4
     ResetSensorStats();         // initialize the sensor tracking data                              4
@@ -428,8 +428,8 @@ void Game::Tick()
                 if  ( !m_sensorConnected )
                 {
                     m_sensorConnected = m_sensor.ConnectSensor();
-                    m_sensor.SetActivationThreshold( m_sensorNits );
                 }
+                m_sensor.SetActivationThreshold(m_sensorNits);
             }
 
             // advance printout columns to current frame
@@ -455,23 +455,25 @@ void Game::Tick()
             if (m_flash)
                 m_sensor.StartLatencyMeasurement(LatencyType_AutoClick);
 
-            // Show the new frame
-            m_deviceResources->Present();
+            Sleep(1);           // not sure why this has to be here  -some timing thing
 
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
 
+            // Show the new frame
+            m_deviceResources->Present();
+
             // if this was a frame that included a flash, then read the photocell's measurement
             if (m_flash)
             {
-                float sensorTime = 0.f;                               // time from sensor in seconds
-                sensorTime = m_sensor.ReadLatency();                  // blocking call
+                float sensorTime = 0.f;                       // time from start of latency measurement sensor in sec
+                sensorTime = m_sensor.ReadLatency();          // blocking call
 
                 if ((sensorTime > 0.001) && (sensorTime < 0.100))     // if valid, run the stats on it
                 {
                     // total it up for computing the average and variance
                     m_totalSensorTime += sensorTime;
-                    m_totalSensorTime2 += (double) sensorTime * sensorTime;
+                    m_totalSensorTime2 += (double)sensorTime * sensorTime;
                     m_sensorCount++;
 
                     // scan for min
@@ -483,6 +485,9 @@ void Game::Tick()
                         m_maxSensorTime = sensorTime;
                 }
             }
+            else
+                Sleep(15);
+
             Sleep(15);
         }
         else      // we are not using the sensor, just track in-PC timings
@@ -612,6 +617,7 @@ void Game::Tick()
     m_totalTimeSinceStart += m_frameTime;       // TODO totalTime should not be a double but a uint64 in microseconds
 }
 
+#if 0 
 void Game::TickOld()
 {
     double frameTime;                               // local variable for comparison
@@ -684,6 +690,7 @@ void Game::TickOld()
     // track data since app startup
     m_totalTimeSinceStart += m_frameTime;       // TODO totalTime should not be a double but a uint64 in microseconds
 }
+#endif
 
 // Every test pattern could have an update routine to call in the main update routine in Tick()
 void Game::UpdateFlickerConstant()                                                                      //  2
@@ -865,14 +872,17 @@ void Game::UpdateFrameDrop()
     case DropRateEnum::Max:
         m_targetFrameRate = m_maxFrameRate;       // max reported by implementation
         break;
-    case DropRateEnum::SquareWave:                // stress test alternating between 24 and max
-        if (m_frameCounter & 0x01)                // alternate between 24Hz and Max
+    case DropRateEnum::Random:                    // stress test alternating between 24 and max
+        if ( ((float)rand()/RAND_MAX) > 0.50 )    // randomly choose between Min and Max
             m_targetFrameRate = 48.0;
         else
             m_targetFrameRate = m_maxFrameRate;
         break;
-    case DropRateEnum::Random:                    // pick a random frame duration within the valid range
-        m_targetFrameRate = 60;
+    case DropRateEnum::SquareWave:                // pick a random frame duration within the valid range
+        if (m_frameCounter & 0x01)                // alternate between Min and Max
+            m_targetFrameRate = 48.0;
+        else
+            m_targetFrameRate = m_maxFrameRate;
         break;
     case DropRateEnum::p48fps:
         m_targetFrameRate = 48;
@@ -1087,19 +1097,26 @@ void Game::ChangeSubtest(bool increment)
 
     case TestPattern::DisplayLatency:                                                           // 4
     {
-        double delta = 1.0;
-        if (m_latencyTestFrameRate >=  69.6) delta = 2.0;
-        if (m_latencyTestFrameRate >= 149.6) delta = 5.0;
-        if (m_latencyTestFrameRate >= 239.6) delta = 10.0;
-        if (m_latencyTestFrameRate >= 479.6) delta = 30.0;
-
-        if (increment)
+        if (m_sensing)
         {
-            m_latencyTestFrameRate -= delta;
+            m_sensorNits += ( increment ? -1.f : +1.f );
         }
         else
         {
-            m_latencyTestFrameRate += delta;
+            double delta = 1.0;
+            if (m_latencyTestFrameRate >= 69.6) delta = 2.0;
+            if (m_latencyTestFrameRate >= 149.6) delta = 5.0;
+            if (m_latencyTestFrameRate >= 239.6) delta = 10.0;
+            if (m_latencyTestFrameRate >= 479.6) delta = 30.0;
+
+            if (increment)
+            {
+                m_latencyTestFrameRate -= delta;
+            }
+            else
+            {
+                m_latencyTestFrameRate += delta;
+            }
         }
         break;
     }
@@ -1316,10 +1333,13 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
         }
     }
 
+    // Test cases:
+//  m_maxFrameRate = 180;       // simulate a monitor I don't have
+
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.78\n\n";
+    text << L"\n\nVersion 0.80\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1918,13 +1938,16 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
     {
         std::wstringstream title;
 
-        title << L"4 Display Latency Measurement\n";
+        title << L"4 Display Latency Measurement:  ";
 
         if ( m_sensing )
         {
+//          if (m_flash) title << "      ";
+//          title << m_frameCounter;
+
             // print frame rate we were targeting for this test (not sampling rate)
             title << fixed;
-            title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+            title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
             title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
             title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
             title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
@@ -1939,21 +1962,21 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 // print total end-to-end latency stats from sensor
                 title << " S E N S I N G  @ " << setprecision(0) << m_sensorNits << "Nits threshold\n";
                 title << "Over last " << m_sensorCount << " samples\n";
-                title << "Average:   " << setprecision(3) << setw(7);
+                title << "Avg: " << setprecision(3) << setw(7);
                 title << avgSensorTime * 1000.0;
-                title << "ms\n";
-                title << "Min:" << setprecision(3) << setw(7);
-                title << m_minSensorTime * 1000.0;
-                title << "  Max:" << setprecision(3) << setw(7);
-                title << m_maxSensorTime * 1000.0;
-                title << "  Var:" << setprecision(3) << setw(6);
+                title << "  Var: " << setprecision(3) << setw(7);
                 title << varSensorTime * 1000.0;
+                title << "\nMin: " << setprecision(3) << setw(7);
+                title << m_minSensorTime * 1000.0;
+                title << "  Max: " << setprecision(3) << setw(7);
+                title << m_maxSensorTime * 1000.0;
             }
             else
                 title << "\n    Please attach a photocell Sensor.\n";
         }
         else
         {
+            title << L"\n";
             title << fixed;
             title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
             title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -2189,7 +2212,21 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 
 }
 
-#define EXPOSURE_TIME (0.25) // time camera aperture is open -in seconds
+bool isPrime(int n)
+{
+    for (int i = 2; i <= n / 2; ++i)
+    {
+        if (n % i == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+#define EXPOSURE_TIME (1.0)
+#if defined(_DEBUG)
+#define EXPOSURE_TIME (1.0) // time camera aperture is open -in seconds
+#endif
 void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)                        	//********************** 6
 {
     if (m_newTestSelected)
@@ -2248,22 +2285,16 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
 
     case DropRateEnum::Random:
     {
-//      select a frame time between min and max with uniform distribution
-//      Compute xy based on that
-//      if it fits in the row, add it
-//      if the next one would not fit, and this one would if extended something less than max, then extend.
-
         // figure out number of squares to draw
-        double targetFrameRate = m_targetFrameRate;
-        double cells = targetFrameRate * EXPOSURE_TIME;
-
         double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
         double avgFrameRate = 1.0 / avgFrameTime;
-        targetFrameRate = avgFrameRate;
-        cells = avgFrameRate;
+        double cells = avgFrameRate * EXPOSURE_TIME;
 
         // compute rows and columns for this many cells
         nCells = round(cells);
+        if (isPrime(nCells))
+                nCells++;
+
         nRows = floor(sqrt(cells)) + 1;
         nCols = nCells / nRows;
         // if it's not an integer match, then keep trying smaller values
@@ -2280,7 +2311,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= m_targetFrameTime / avgFrameTime;
-        c = 0.5 * avgFrameTime / m_targetFrameTime;     // this may need to be done in linear not gamma space in SDR mode
+        c = 0.5 * avgFrameTime / m_targetFrameTime;
 
         // compute position for current square 
         iCol = m_frameCounter % nCols;
@@ -2295,16 +2326,14 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
     case DropRateEnum::SquareWave:
     {
         // figure out number of squares to draw
-        double targetFrameRate = m_targetFrameRate;
-        double cells = targetFrameRate * EXPOSURE_TIME;
-
         double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
         double avgFrameRate = 1.0 / avgFrameTime;
-        targetFrameRate = avgFrameRate;
-        cells = avgFrameRate;
+        double cells = avgFrameRate * EXPOSURE_TIME;
 
         // compute rows and columns for this many cells
         nCells = round(cells);
+        if (isPrime(nCells))
+            nCells++;
         nRows = floor(sqrt(cells)) + 1;
         nCols = nCells / nRows;
         // if it's not an integer match, then keep trying smaller values
@@ -2321,7 +2350,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= m_targetFrameTime / avgFrameTime;
-        c = 0.5 * avgFrameTime / m_targetFrameTime;     // this may need to be done in linear not gamma space in SDR mode
+        c = 0.5 * avgFrameTime / m_targetFrameTime;
 
         // compute position for current square 
         iCol = m_frameCounter % nCols;
