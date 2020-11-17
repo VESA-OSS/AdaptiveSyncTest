@@ -32,9 +32,9 @@ public:
     float ReadLatency();
     float ReadLuminance();
     void SetActivationThreshold(float nits);
+    void Disconnect();
 private:
     void SendCommand(int cmd);
-    void Disconnect();
     bool Connect(int com);
     void SetTimeOuts(int v = 3);
 //  void UpdateFirmware(int hwVer);

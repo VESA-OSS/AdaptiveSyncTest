@@ -178,6 +178,7 @@ public:
     void ToggleSensing(void);
     void ToggleAutoG2G(void);
     void ResetCurrentStats(void);                     // reset whichever stats are currently in use
+    void ReconnectSensor(void);
     void DisconnectSensor(void);
 
     void ChangeGradientColor(float deltaR, float deltaG, float deltaB);

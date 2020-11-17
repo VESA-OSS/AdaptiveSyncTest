@@ -343,6 +343,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case 0x53:                                                        // 'S'
             game->ToggleSensing();
             break;
+        case 0x70:                                                        // F1
+            game->ReconnectSensor();
+            break;
         case 0x57:                                                        // 'W'
             game->SetTestPattern(Game::TestPattern::WarmUp);
             break;

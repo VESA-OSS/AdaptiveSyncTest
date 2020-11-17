@@ -853,7 +853,8 @@ void Game::UpdateGrayToGray()
     }
     else      // we are in manual state setting mode (not auto sequence)
     {
-        m_from = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+//      m_from = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+        m_from = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
     }
 
     // compute color for test patch
@@ -1339,7 +1340,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.80\n\n";
+    text << L"\n\nVersion 0.81\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1942,10 +1943,10 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 
         if ( m_sensing )
         {
-//          if (m_flash) title << "      ";
-//          title << m_frameCounter;
-
-            // print frame rate we were targeting for this test (not sampling rate)
+//          if (m_flash)
+//              title << "      ";
+            title << m_frameCounter;
+            // print frame rate we were targeting for this test (not the rate we are sampling lag at)
             title << fixed;
             title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
             title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -1970,6 +1971,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 title << m_minSensorTime * 1000.0;
                 title << "  Max: " << setprecision(3) << setw(7);
                 title << m_maxSensorTime * 1000.0;
+                title << "\nUp/Down arrows adjust sensor nits threshold";
             }
             else
                 title << "\n    Please attach a photocell Sensor.\n";
@@ -2097,7 +2099,15 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 #endif
 
         }
+        title << "\n";
 
+        // there is some chance that reading the luminance interferes with timing...
+#ifdef NOT_DEBUG
+        float lum = m_sensor.ReadLuminance();
+        if (m_flash)
+            title << "       ";
+        title << setprecision(0) << setw(5) << lum;
+#endif
         title << "\nPress S to toggle Sensor sampling";
         title << "\nPress R to Reset stat counters";
         title << "\n" << m_hideTextString;
@@ -3313,9 +3323,30 @@ void Game::LoadEffectResources(TestPatternResources* resources)
     }
 }
 
+// called on app exit to clean up
 void Game::DisconnectSensor(void)
 {
     m_sensor.~Sensor();
+}
+
+void Game::ReconnectSensor(void)
+{
+    if (m_sensing)
+    {
+        // disconnect
+//      m_sensor.~Sensor();
+        m_sensor.Disconnect();
+
+        // wait 1/2 second
+        Sleep(500);
+
+    // connect again
+        m_sensorConnected = m_sensor.ConnectSensor();
+        m_sensor.SetActivationThreshold(m_sensorNits);
+        if (!m_sensorConnected)
+            bool x = true;
+        ResetSensorStats();
+    }
 }
 
 void Game::OnDeviceLost()
