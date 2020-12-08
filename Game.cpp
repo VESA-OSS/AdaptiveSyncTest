@@ -429,7 +429,6 @@ void Game::Tick()
                 {
                     m_sensorConnected = m_sensor.ConnectSensor();
                 }
-                m_sensor.SetActivationThreshold(m_sensorNits);
             }
 
             // advance printout columns to current frame
@@ -454,8 +453,6 @@ void Game::Tick()
             // if there should be a flash this frame, start measuring
             if (m_flash)
                 m_sensor.StartLatencyMeasurement(LatencyType_AutoClick);
-
-            Sleep(1);           // not sure why this has to be here  -some timing thing
 
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
@@ -485,10 +482,10 @@ void Game::Tick()
                         m_maxSensorTime = sensorTime;
                 }
             }
-            else
-                Sleep(15);
-
-            Sleep(15);
+            else   // we are not flashing so just wait for the flip queue to update with the black frame
+            {
+                Sleep(50);
+            }
         }
         else      // we are not using the sensor, just track in-PC timings
         {
@@ -558,7 +555,6 @@ void Game::Tick()
             m_frameLog[0]->presentCounts = getPerfCounts();
             // Show the new frame
             m_deviceResources->Present();
-
 
             // log time when vsync happens on display
     //      m_frameLog[0]->syncCounts = presentCounts;      // clear this as we don't know until next frame
@@ -1100,7 +1096,9 @@ void Game::ChangeSubtest(bool increment)
     {
         if (m_sensing)
         {
+            // adjust the sensor detection level
             m_sensorNits += ( increment ? -1.f : +1.f );
+            m_sensor.SetActivationThreshold(m_sensorNits);
         }
         else
         {
@@ -1340,7 +1338,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.81\n\n";
+    text << L"\n\nVersion 0.82\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1948,10 +1946,11 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << m_frameCounter;
             // print frame rate we were targeting for this test (not the rate we are sampling lag at)
             title << fixed;
-            title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
-            title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
-            title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-            title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+//          title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+//          title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+//          title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+//          title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+            title << L"\n";
 
             int count = m_sensorCount;
             if (count <= 0) count = 1;
@@ -2064,8 +2063,9 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << setprecision(3) << setw(8) << varPresentTime * 1000.f;
 
             // Compute Display Latency
+            double usbTime = 0.002; // half of USB round trip time is 2ms
             double avgSensorTime = m_totalSensorTime / m_sensorCount;
-            double avgDisplayTime = avgSensorTime - avgPresentTime;
+            double avgDisplayTime = avgSensorTime - avgPresentTime - usbTime;
 
             title << "\nDisplay:   " << setprecision(3);
             title << setw(8) << avgDisplayTime * 1000.0f;

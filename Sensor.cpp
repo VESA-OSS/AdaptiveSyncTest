@@ -17,11 +17,12 @@
 #define LS_CMD_QUERY_VERSION      1
 #define LS_CMD_STOP               3
 #define LS_CMD_LIGHT_INPUT        5
-#define LS_CMD_LATENCY           10 // wait for a click and then measure latency
+#define LS_CMD_LATENCY           10         // wait for a click and then measure latency
 #define LS_CMD_BOOT_LOADER       13
-#define LS_CMD_LATENCY_AUTO_FIRE 14 // click the mouse and then measure latency
-#define LS_CMD_LATENCY_IMMEDIATE 15 // start measuring latency right away
+#define LS_CMD_LATENCY_AUTO_FIRE 14         // click the mouse and then measure latency
+#define LS_CMD_LATENCY_IMMEDIATE 15         // start measuring latency right away
 #define LS_CMD_SET_LUM_THRESHOLD 19
+#define LS_CMD_LATENCY_AUTO_FIRE_HID 24     // returns a time from when it sent a click event
 #define LS_CMD_READ_ADC          30
 
 const float CALIBRATION_SCALER = 5000.0f;
@@ -104,7 +105,11 @@ float Sensor::ReadLatency()
         return -1;
     }
 
-    const double RAW_TO_SEC = 256.0 / 7.37E6;
+    double RAW_TO_SEC;
+    if (hwVer >= 5)
+        RAW_TO_SEC = 1.0 / 32768.0;
+    else
+        RAW_TO_SEC = 256.0 / 7.37E6;
     float lat = (float)(RAW_TO_SEC * rawLat);
 
     return lat;

@@ -1,0 +1,20 @@
+Sensior Returns 0 as an error code.
+This can happen if:
+
+1) A new command is received while it is waiting for the photocell flash.
+	Blocking read should handle this?
+
+2) The new luminance value measured is not higher than the threshold.
+	e.g. The screen did not flash in time.
+
+3) It is waiting for the photocell to detect the flash for more than 2 seconds.
+
+LED Codes:
+Pulsing Purple:	device is connected via USB to the PC,
+		but not necessarily to an app.
+
+Blue		Waiting for the mouse click via manual button.
+
+Green		Measuring luminance
+
+Pulsing green:	Triggered and waiting for the photocell.
