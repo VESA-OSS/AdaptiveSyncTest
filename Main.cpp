@@ -380,11 +380,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case 0x39:                                                        // '9'
 			game->SetTestPattern(Game::TestPattern::GameJudder);
 			break;
-        case 0x54:                                                        // '0'
-		case 0x30:                                                        // 'T'
+		case 0x30:                                                        // '0'
+        case 0x54:                                                        // 'T'
             game->SetTestPattern(Game::TestPattern::Tearing);
             break;
-
+        case 0x56:                                                        // 'V'
+            game->ToggleVTotalMode();
+            break;
         default:
             break;
         }

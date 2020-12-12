@@ -53,11 +53,19 @@ void Game::ConstructorInternal()
         throw std::exception("QueryPerformanceFrequency");
     }
 
+    m_pModeList = NULL;         // ptr to list of display modes on this output.
+    m_numModes = 0;
+
     m_mediaPresentDuration = 0; // Duration when using SwapChainMedia for hardware syncs.
                                 // Units are in 0.1us or 100ns intervals.  Zero 0 = off.
+    m_vTotalFixedSupported = false;         // assume we don't support fixed V-Total mode
+    m_vTotalMode = VTotalMode::Adaptive;    // so we are in Adaptive mode
 
-    m_minFrameRate =  24;       // fps
+    m_minFrameRate =  24;       // fps      these will be overridden by the detection logic.
     m_maxFrameRate = 120;
+    m_minDuration = 0;          // min frame time for Fixed V-Total mode -default to 0 for adaptive only
+    m_maxDuration = 0;          // max frame time for Fixed V-Total mode -default to 0 for adaptive only
+
     m_color = 0.f;              // black by default
 
     m_currentTest = TestPattern::StartOfTest;
@@ -162,6 +170,14 @@ void Game::Initialize(HWND window, int width, int height)
     CreateDeviceDependentResources();
     CreateWindowSizeDependentResources();
 
+}
+
+void Game::ToggleVTotalMode()
+{
+    if (m_vTotalMode == VTotalMode::Adaptive)
+        m_vTotalMode = VTotalMode::Fixed;
+    else
+        m_vTotalMode = VTotalMode::Adaptive;
 }
 
 void Game::TogglePause()
@@ -703,7 +719,7 @@ void Game::UpdateFlickerConstant()                                              
         break;
 
     default:
-        m_targetFrameRate = mediaFrameRates[m_flickerRateIndex - 2];
+        m_targetFrameRate = mediaRefreshRates[m_flickerRateIndex - 2];
         break;
     }
 
@@ -906,7 +922,7 @@ void Game::Update()
         break;
 
     case TestPattern::PanelCharacteristics:                                                     // 1
-		UpdateDxgiColorimetryInfo();
+//		UpdateDxgiColorimetryInfo();
 		break;
 
     case TestPattern::FlickerConstant:                                                          // 2
@@ -1226,7 +1242,72 @@ void Game::ChangeSubtest(bool increment)
 }
 void Game::UpdateDxgiRefreshRatesInfo()
 {
-    // TODO move code to find min/maxFrameRates into here from ConnectionProperties test pattern routine
+    // find min/maxFrameRates
+
+    // Get information about the display we are presenting to.
+    ComPtr<IDXGIOutput> output;
+    auto sc = m_deviceResources->GetSwapChain();
+    DX::ThrowIfFailed(sc->GetContainingOutput(&output));
+
+    UINT flags = 0;
+
+    DXGI_FORMAT format;
+    if ( CheckHDR_On() )
+    {
+        format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    }
+    else
+    {
+        format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    }
+
+    // first call to get the number of modes supported in this format
+    output->GetDisplayModeList(format, flags, &m_numModes, 0);
+
+    // second call collects them into an array
+    if (m_pModeList != NULL)
+        free(m_pModeList);
+
+    m_pModeList = new DXGI_MODE_DESC[m_numModes];
+    output->GetDisplayModeList(format, flags, &m_numModes, m_pModeList);
+
+    m_minFrameRate = 1000000;       // 1 million
+    m_maxFrameRate = 0;
+    for (int iMode = 0; iMode < m_numModes; iMode++)
+    {
+        if (m_pModeList[iMode].Width == m_modeWidth && m_pModeList[iMode].Height == m_modeHeight)
+        {
+            double rate = (double)m_pModeList[iMode].RefreshRate.Numerator
+                / (double)m_pModeList[iMode].RefreshRate.Denominator;
+
+            if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
+            if (rate < m_minFrameRate) m_minFrameRate = rate;
+        }
+    }
+    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
+
+    // TODO tag which mode is current (defaults to highest for now)
+
+    // print the fixed rate V-Total video frame rate range supported
+
+    IDXGISwapChainMedia* scMedia;
+    DX::ThrowIfFailed(sc->QueryInterface(IID_PPV_ARGS(&scMedia)));
+
+    UINT closestSmallerPresentDuration, closestLargerPresentDuration;
+
+    // find Min frame rate supported in PresentDuration mode by trying largest duration:
+    DX::ThrowIfFailed(scMedia->CheckPresentDurationSupport(500000,          // 20Hz
+        &closestSmallerPresentDuration, &closestLargerPresentDuration));
+    m_maxDuration = closestSmallerPresentDuration;
+
+    // find Max frame rate supported in PresentDuration mode by trying smallest duration:
+    DX::ThrowIfFailed(scMedia->CheckPresentDurationSupport(1000,           // 10,000Hz
+        &closestSmallerPresentDuration, &closestLargerPresentDuration));
+    m_minDuration = closestLargerPresentDuration;
+
+    // this may need to be adjusted based on the VESA criteria.  TODO
+    if (m_minDuration > 0)
+        m_vTotalFixedSupported = true;
 
 }
 
@@ -1235,6 +1316,9 @@ void Game::UpdateDxgiColorimetryInfo()
     // Output information is cached on the DXGI Factory. If it is stale we need to create
     // a new factory and re-enumerate the displays.
     auto d3dDevice = m_deviceResources->GetD3DDevice();
+
+    // make sure we initialize the min/max modes even on startup
+    DXGI_FORMAT format = m_deviceResources->GetBackBufferFormat();
 
     ComPtr<IDXGIDevice3> dxgiDevice;
     DX::ThrowIfFailed(d3dDevice->QueryInterface(IID_PPV_ARGS(&dxgiDevice)));
@@ -1298,47 +1382,19 @@ void Game::UpdateDxgiColorimetryInfo()
 	m_dxgiColorInfoStale = false;
 
     //	ACPipeline();
+
+    // make sure refresh rates are also current
+    UpdateDxgiRefreshRatesInfo();
+
 }
 
 
 void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
 {
-    // make sure we initialize the min/max resolutions even on startup
-    auto format = m_deviceResources->GetBackBufferFormat();
-
-    ComPtr<IDXGIOutput> output;
-    auto sc = m_deviceResources->GetSwapChain();
-    DX::ThrowIfFailed(sc->GetContainingOutput(&output));
-
-    UINT numModes = 0;
-    UINT flags = 0;
-
-    // first call to get the number of modes in this format
-    output->GetDisplayModeList(format, flags, &numModes, 0);
-
-    // second call collects them into an array
-    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[numModes];
-    output->GetDisplayModeList(format, flags, &numModes, pDescs);
-
-    m_minFrameRate = 1000000;       // 1 million
-    m_maxFrameRate = 0;
-    for (int iMode = 0; iMode < numModes; iMode++)
-    {
-        if (pDescs[iMode].Width == m_modeWidth && pDescs[iMode].Height == m_modeHeight)
-        {
-            double rate = (double)pDescs[iMode].RefreshRate.Numerator / (double)pDescs[iMode].RefreshRate.Denominator;
-            if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
-            if (rate < m_minFrameRate) m_minFrameRate = rate;
-        }
-    }
-
-    // Test cases:
-//  m_maxFrameRate = 180;       // simulate a monitor I don't have
-
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.82\n\n";
+    text << L"\n\nVersion 0.83\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1386,18 +1442,18 @@ bool Game::CheckHDR_On()
 	return HDR_On;
 }
 
-void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
+void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)                           // No hotkey
 {
     std::wstringstream text;
 
-    text << L"\nConnection to: ";
+    text << L"\nConnection: ";
     WCHAR* DisplayName = wcsrchr(m_outputDesc.DeviceName, '\\');
     text << ++DisplayName;
 
-    text << L"\nConnection bit depth: ";
+    text << L"\nBit depth:  ";
     text << std::to_wstring(m_outputDesc.BitsPerColor);
 
-    text << L"\nConnection colorspace: [";
+    text << L"\nColorspace: [";
     text << std::to_wstring(m_outputDesc.ColorSpace);
     switch (m_outputDesc.ColorSpace)
     {
@@ -1412,102 +1468,43 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)
         text << L"] Unknown";
         break;
     }
+    text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight << L"\n";
 
-    bool HDR_On = CheckHDR_On();
+    text << "\nAdaptive Display Modes supported at this resolution and bit depth:\n";
 
-    text << "\n\nDisplay Modes supported at this resolution and bit depth:\n";
-    text << m_modeWidth << " x " << m_modeHeight;
-
-    DXGI_FORMAT format;
-    format = DXGI_FORMAT_R10G10B10A2_UNORM;     // in case this is ever possible
-    if (HDR_On)
+    // print out the modes in the current mode list that match current resolution:
+    for (int iMode = 0; iMode < m_numModes; iMode++)
     {
-        format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-        text << " @ 16b/channel\n";
-    }
-    else
-    {
-        format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        text << " @  8b/channel\n";
-    }
-
-    // Get information about the display we are presenting to.
-    ComPtr<IDXGIOutput> output;
-    auto sc = m_deviceResources->GetSwapChain();
-    DX::ThrowIfFailed(sc->GetContainingOutput(&output));
-
-    UINT numModes = 0;
-    UINT flags = 0;
-
-    // first call to get the number of modes in this format
-    output->GetDisplayModeList(format, flags, &numModes, 0);
-
-    // second call collects them into an array
-    DXGI_MODE_DESC* pDescs = new DXGI_MODE_DESC[numModes];
-    output->GetDisplayModeList(format, flags, &numModes, pDescs);
-
-    m_minFrameRate = 1000000;       // 1 million
-    m_maxFrameRate = 0;
-    for (int iMode = 0; iMode < numModes; iMode++)
-    {
-        if (pDescs[iMode].Width == m_modeWidth && pDescs[iMode].Height == m_modeHeight)
+        if (m_pModeList[iMode].Width == m_modeWidth && m_pModeList[iMode].Height == m_modeHeight)
         {
-            double rate = (double)pDescs[iMode].RefreshRate.Numerator
-                        / (double)pDescs[iMode].RefreshRate.Denominator;
-            text << fixed << setw(10) << setprecision(4) << rate << "Hz\n";
-
-            if (rate > m_maxFrameRate) m_maxFrameRate = rate;                   // scan to find min/max
-            if (rate < m_minFrameRate) m_minFrameRate = rate;
+            double rate = (double)m_pModeList[iMode].RefreshRate.Numerator
+                        / (double)m_pModeList[iMode].RefreshRate.Denominator;
+            text << L"      ";
+            text << fixed << setw(10) << setprecision(3) << rate << "Hz  ";
+            text << fixed << setw(10) << setprecision(4) << 1000. / rate << "ms\n";
         }
     }
-    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
-
     // TODO tag which mode is current (defaults to highest for now)
 
-    text << "Ratio: " << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
+    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
+    text << "Ratio:  " << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
 
     // print the video frame rate range supported
     text << "\nRange of refresh rates for fixed rate media playback:\n";
 
-    IDXGISwapChainMedia *scMedia;
-    DX::ThrowIfFailed(sc->QueryInterface(IID_PPV_ARGS(&scMedia)));
-    UINT desiredPresentDuration = 166667;       //  60Hz
-
-    desiredPresentDuration = 166667;       //  60Hz
-    desiredPresentDuration =  83333;       // 120Hz
-    desiredPresentDuration =  83333;       // 120Hz
-    desiredPresentDuration =  83333;       // 120Hz
-    desiredPresentDuration =  55555;       // 180Hz
-    desiredPresentDuration =  41667;       // 240Hz
-    desiredPresentDuration =  33333;       // 300Hz
-    desiredPresentDuration =  27777;       // 360Hz
-    desiredPresentDuration =  69444;       // 144Hz
-
-    UINT closestSmallerPresentDuration, closestLargerPresentDuration;
-    DX::ThrowIfFailed(scMedia->CheckPresentDurationSupport(desiredPresentDuration,
-        &closestSmallerPresentDuration, &closestLargerPresentDuration ));
-
-    // m_mediaPresentDuration
-
-//  closestSmallerPresentDuration = desiredPresentDuration;
-
-    double rate, duration;
     text << "Min:  " << fixed;
-    duration = closestSmallerPresentDuration/10000.0;        // scale units from hundreds of nanoseconds to ms
-    rate = 0.f;
-    if (closestSmallerPresentDuration > 0)
-        rate = 1000.f / duration;
-    text << setw(10) << setprecision(4) << rate << "Hz  ";
-    text << setw(10) << setprecision(4) << duration << "ms\n";
+    double minRate = 0.0;
+    if (m_maxDuration > 0)
+        minRate = 10000000.f / m_maxDuration;
+    text << setw(10) << setprecision(3) << minRate << "Hz  ";
+    text << setw(10) << setprecision(4) << m_maxDuration / 10000.0 << "ms\n";        // scale units from hundreds of nanoseconds to ms
 
     text << "Max:  ";
-    duration = closestLargerPresentDuration/10000.0;         // scale units from hundreds of nanoseconds to ms
-    rate = 0.f;
-    if (closestLargerPresentDuration > 0)
-        rate = 1000.f / duration;
-    text << setw(10) << setprecision(4) << rate << "Hz  ";
-    text << setw(10) << setprecision(4) << duration << "ms\n";
-
+    double maxRate = 0.0;
+    if (m_minDuration > 0)
+        maxRate = 10000000.f / m_minDuration;
+    text << setw(10) << setprecision(3) << maxRate << "Hz  ";
+    text << setw(10) << setprecision(4) << m_minDuration/10000.0 << "ms\n";        // scale units from hundreds of nanoseconds to ms
 
     RenderText(ctx, m_monospaceFormat.Get(), text.str(), m_largeTextRect);
 
@@ -1723,6 +1720,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 	{
 		std::wstringstream title;
         title << L"2 Flicker at Constant Refresh Rate: ";
+
         switch (m_flickerRateIndex)
         {
         case 0: title << " Min";   break;
@@ -1743,6 +1741,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
 #if 0
         // display brightness level for this test
         title << setprecision(0);
@@ -1761,6 +1760,16 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 			title << sRGBval;
 		}
 #endif
+        // if this implementation supports v-total fixed-rate mode, then display current setting
+        if  (m_vTotalFixedSupported )
+        {
+            switch (m_vTotalMode)
+            {
+            case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
+            case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
+            }
+        }
+
         title << L"Adjust luminance to 10nits using UI slider or OSD\n";
 		title << L"Select refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
@@ -2612,9 +2621,19 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
-        title << "Grid " << nRows << " x " << nCols;
+        title << "Grid " << nRows << " x " << nCols << "\n";
 
-        title << L"\nSelect refresh rate using Up/Down arrows\n";
+        // if this implementation supports v-total fixed-rate mode, then display current setting
+        if (m_vTotalFixedSupported)
+        {
+            switch (m_vTotalMode)
+            {
+            case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
+            case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
+            }
+        }
+
+        title << L"Select refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);

@@ -53,18 +53,15 @@ private:
     };
 
 // Media rate Flicker test indexes into these arrays using its FlickerRateIndex
-#define numMediaRates 10            // number of frame rates in the media rate test                 7
-    float mediaFrameRates[numMediaRates] = { 23.976f, 24.0f, 25.0f, 29.97f, 30.0f, 47.952f, 48.0f, 50.0f, 59.94f, 60.0f };
 
-#define numFrameDropRates 5         // number of frame rates in the FrameDrop test                  6
-//  float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
-
-#define maxSleepDelay 120.          // ms
+#define numMediaRates 11            // number of refresh rates in the media rate test               2, 7
+    double mediaRefreshRates[numMediaRates]   = { 23.976,   24.0,   25.0,  29.97,   30.0, 47.952,   48.0,  50.0,   59.94,  60.0,  120.0 };
+    UINT mediaPresentDurations[numMediaRates] = { 417083, 416666, 400000, 333666, 333333, 208542, 208333, 200000, 166833, 166667, 83333 };
 
 #define numGtGValues 5              // number of levels in the G2G tests                            5
 
-#define numCommonRates 10           // not used anywhere
-    float commonFrameRates[numCommonRates] = { 30.f, 48.f, 60.f, 90.f, 120.f, 144.f, 180.f, 240.f, 300.f, 360.f };
+#define numFrameDropRates 5         // number of frame rates in the FrameDrop test                  6
+//  float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
 
     const INT32 maxMotionBlurs = 10;
 
@@ -104,6 +101,12 @@ private:
 public:
 
     Game(PWSTR appTitle);
+
+    enum class VTotalMode
+    {
+        Adaptive,
+        Fixed,
+    };
 
     enum class WaveEnum             // for Variable Rate Flicker Test                                   3
     {
@@ -174,6 +177,7 @@ public:
     void ChangeG2GFromIndex(bool increment);
     void ChangeG2GToIndex(bool increment);
     void StartTestPattern(void);
+    void ToggleVTotalMode(void);
     void TogglePause(void);
     void ToggleSensing(void);
     void ToggleAutoG2G(void);
@@ -284,6 +288,8 @@ private:
 
     INT32                       m_modeWidth;                // resolution of current mode (actually native res now)
     INT32                       m_modeHeight;
+    UINT32                      m_numModes;                 // nr of display modes
+    DXGI_MODE_DESC*             m_pModeList;                // ptr to list of modes at this res. aka pDescs in docs.
 
     LARGE_INTEGER               m_qpcFrequency;             // performanmce counter frequency on this PC
     INT64                       m_mediaPresentDuration;     // frame duration when using SwapChainMedia video sync in 0.1us
@@ -307,11 +313,16 @@ private:
     uint64_t                    m_frameCounter;             // how many frames rendered in app since start
     double                      m_targetFrameRate;          // frame rate we want to achieve
     double                      m_targetFrameTime;          // duration of the frame being presented
+    bool                        m_vTotalFixedSupported;     // this monitor/GPU supports PresentDuration timings
+    VTotalMode                  m_vTotalMode;               // set Fixed frame rate vs Adaptive (g-sync)
     bool                        m_paused;                   // whether we are updating data or not
 
-    double                      m_maxFrameRate;             // maximum this device can support                  1
-    double                      m_minFrameRate;             // minimum this device can support
+    double                      m_maxFrameRate;             // maximum this output can handle in adaptive mode  1
+    double                      m_minFrameRate;             // minimum this output can handle in adaptive mode
     double                      m_FrameRateRatio;           // ratio of above 2 parameters
+
+    UINT                        m_minDuration;              // min frame time for Fixed V-Total mode
+    UINT                        m_maxDuration;              // max frame time for Fixed V-Total mode
 
     INT32                       m_flickerRateIndex;         // select frame rate in flicker test                2
 
