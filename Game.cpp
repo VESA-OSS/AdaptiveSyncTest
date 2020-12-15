@@ -85,6 +85,7 @@ void Game::ConstructorInternal()
     ResetSensorStats();         // initialize the sensor tracking data                              4
     ResetFrameStats();          // initialize the frame timing data
     m_avgInputTime = 0.006;     // hard coded at 6ms until dongle can drive input
+#define USB_TIME 0.004          // time for 1 round trip on USB wire                                4
 
     m_autoG2G = false;          // if we are in automatic sequence mode                             5
     m_from = true;              // start with "From" color                                          5
@@ -468,7 +469,7 @@ void Game::Tick()
 
             // if there should be a flash this frame, start measuring
             if (m_flash)
-                m_sensor.StartLatencyMeasurement(LatencyType_AutoClick);
+                m_sensor.StartLatencyMeasurement(LatencyType_Immediate);
 
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
@@ -1309,6 +1310,9 @@ void Game::UpdateDxgiRefreshRatesInfo()
     if (m_minDuration > 0)
         m_vTotalFixedSupported = true;
 
+    // initialize those scenes that should default to max frame rate
+    m_latencyTestFrameRate = m_maxFrameRate;
+
 }
 
 void Game::UpdateDxgiColorimetryInfo()
@@ -1394,7 +1398,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.83\n\n";
+    text << L"\n\nVersion 0.84\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1446,12 +1450,9 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
 {
     std::wstringstream text;
 
-    text << L"\nConnection: ";
+    text << L"Connection: ";
     WCHAR* DisplayName = wcsrchr(m_outputDesc.DeviceName, '\\');
     text << ++DisplayName;
-
-    text << L"\nBit depth:  ";
-    text << std::to_wstring(m_outputDesc.BitsPerColor);
 
     text << L"\nColorspace: [";
     text << std::to_wstring(m_outputDesc.ColorSpace);
@@ -1468,7 +1469,9 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
         text << L"] Unknown";
         break;
     }
-    text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight << L"\n";
+    text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight << " x ";
+    text << std::to_wstring(m_outputDesc.BitsPerColor);
+    text << L"bits\n";
 
     text << "\nAdaptive Display Modes supported at this resolution and bit depth:\n";
 
@@ -1487,7 +1490,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
     // TODO tag which mode is current (defaults to highest for now)
 
     m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
-    text << "Ratio:  " << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
+    text << "  Ratio:" << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
 
     // print the video frame rate range supported
     text << "\nRange of refresh rates for fixed rate media playback:\n";
@@ -1963,7 +1966,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 
             int count = m_sensorCount;
             if (count <= 0) count = 1;
-            double avgSensorTime = m_totalSensorTime / count;
+            double avgSensorTime = (m_totalSensorTime / m_sensorCount) - USB_TIME;
             double varSensorTime = sqrt(count * m_totalSensorTime2 - m_totalSensorTime * m_totalSensorTime) / count;
 
             if (m_sensorConnected)
@@ -1980,6 +1983,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 title << "  Max: " << setprecision(3) << setw(7);
                 title << m_maxSensorTime * 1000.0;
                 title << "\nUp/Down arrows adjust sensor nits threshold";
+                title << "\nF1 key reconnects sensor";
             }
             else
                 title << "\n    Please attach a photocell Sensor.\n";
@@ -2071,11 +2075,20 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << setprecision(3) << setw(8) << avgPresentTime * 1000.f;
             title << setprecision(3) << setw(8) << varPresentTime * 1000.f;
 
-            // Compute Display Latency
-            double usbTime = 0.002; // half of USB round trip time is 2ms
-            double avgSensorTime = m_totalSensorTime / m_sensorCount;
-            double avgDisplayTime = avgSensorTime - avgPresentTime - usbTime;
 
+         // TODO REMOVE THIS HACK FOR TESTING to simulate a more consistent value from the presentStats API
+ //         avgPresentTime = avgFrameTime / 2.0;
+
+            title << "\nSensor: ";
+            double avgSensorTime = (m_totalSensorTime / m_sensorCount) - USB_TIME;
+            double varSensorTime = sqrt(m_sensorCount * m_totalSensorTime2 - m_totalSensorTime * m_totalSensorTime) / m_sensorCount;
+            title << "Avg:" << setprecision(3) << setw(7);
+            title << avgSensorTime * 1000.0;
+            title << " Var:" << setprecision(3) << setw(7);
+            title << varSensorTime * 1000.0;
+
+            // Compute Display Latency
+            double avgDisplayTime = avgSensorTime - avgPresentTime;
             title << "\nDisplay:   " << setprecision(3);
             title << setw(8) << avgDisplayTime * 1000.0f;
             title << "ms or " << setprecision(3);
@@ -2089,6 +2102,15 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << "ms or " << setprecision(3);
             title << setw(6) << e2eTime / avgFrameTime;
             title << " frames";
+#if 0
+            // print out total LDAT E2E latency
+            double LdatTime = m_avgInputTime + avgFrameTime + avgPresentTime + avgDisplayTime;
+            title << "\nLDATs E2E: " << setprecision(3);
+            title << setw(8) << LdatTime * 1000.0f;
+            title << "ms or " << setprecision(3);
+            title << setw(6) << LdatTime / avgFrameTime;
+            title << " frames";
+#endif
 
 #if 0
             // print the running average of frame times
