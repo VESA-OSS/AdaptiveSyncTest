@@ -16,6 +16,9 @@
 #include "Sensor.h"
 #include <map>
 
+#include <winrt\Windows.Devices.Display.h>
+#include <winrt\Windows.Devices.Enumeration.h>
+
 struct rawOutputDesc
 {
 	float MaxLuminance;
@@ -262,7 +265,16 @@ private:
     void LoadEffectResources(TestPatternResources* resources);
 
     // Device resources.
-    std::unique_ptr<DX::DeviceResources>    m_deviceResources;
+    std::unique_ptr<DX::DeviceResources>                    m_deviceResources;
+    DXGI_ADAPTER_DESC                                       m_adapterDesc;
+
+    winrt::hstring                                          m_monitorName;                  // friendlier name
+    winrt::Windows::Devices::Display::DisplayMonitorConnectionKind        m_connectionKind;               // Internal vs wired
+    winrt::Windows::Devices::Display::DisplayMonitorPhysicalConnectorKind m_physicalConnectorKind;        // HDMI vs DisplayPort
+    winrt::Windows::Devices::Display::DisplayMonitorDescriptorKind        m_connectionDescriptorKind;     // EDID vs DisplayID
+
+    DXGI_RATIONAL                                           m_verticalSyncRate;     // Current mode's max rate
+    DWORD                                                   m_displayFrequency;     // from EnumDisplaySettings -not precise
 
     Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>        m_gradientBrush;
     Microsoft::WRL::ComPtr<IDWriteTextLayout>               m_testTitleLayout;
@@ -320,6 +332,7 @@ private:
     double                      m_maxFrameRate;             // maximum this output can handle in adaptive mode  1
     double                      m_minFrameRate;             // minimum this output can handle in adaptive mode
     double                      m_FrameRateRatio;           // ratio of above 2 parameters
+    double                      m_OSFrameRate;              // Advanced Display Settings (upper limit for AdaptSync)
 
     UINT                        m_minDuration;              // min frame time for Fixed V-Total mode
     UINT                        m_maxDuration;              // max frame time for Fixed V-Total mode

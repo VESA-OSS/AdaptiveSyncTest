@@ -18,9 +18,6 @@
 #include "ColorSpaces.h"
 #include "Game.h"
 
-#include <winrt\Windows.Devices.Display.h>
-#include <winrt\Windows.Devices.Enumeration.h>
-
 #define BRIGHTNESS_SLIDER_FACTOR (m_rawOutDesc.MaxLuminance / m_outputDesc.MaxLuminance)
 
 //using namespace concurrency;
@@ -85,7 +82,7 @@ void Game::ConstructorInternal()
     ResetSensorStats();         // initialize the sensor tracking data                              4
     ResetFrameStats();          // initialize the frame timing data
     m_avgInputTime = 0.006;     // hard coded at 6ms until dongle can drive input
-#define USB_TIME 0.004          // time for 1 round trip on USB wire                                4
+#define USB_TIME 0.002          // time for 1 round trip on USB wire                                4
 
     m_autoG2G = false;          // if we are in automatic sequence mode                             5
     m_from = true;              // start with "From" color                                          5
@@ -437,7 +434,7 @@ void Game::Tick()
         if (m_sensing)
         {
             m_flash = m_frameCounter & 0x01;                     // switch every other frame
-
+#if 0
             // if there should be a flash this frame, reconnect the sensor (should not be required every frame)
             if (m_flash)
             {
@@ -447,7 +444,7 @@ void Game::Tick()
                     m_sensorConnected = m_sensor.ConnectSensor();
                 }
             }
-
+#endif
             // advance printout columns to current frame
             RotateFrameLog();                                    // make room to store this latest data
 
@@ -468,8 +465,12 @@ void Game::Tick()
             Render();                                       // this is before we have all values for this frame
 
             // if there should be a flash this frame, start measuring
+            UINT sensorCountsStart;
             if (m_flash)
+            {
                 m_sensor.StartLatencyMeasurement(LatencyType_Immediate);
+                sensorCountsStart = getPerfCounts();
+            }
 
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
@@ -483,14 +484,20 @@ void Game::Tick()
                 float sensorTime = 0.f;                       // time from start of latency measurement sensor in sec
                 sensorTime = m_sensor.ReadLatency();          // blocking call
 
+                // get own estimate of sensorTime based on QPC
+                UINT sensorCountsEnd = getPerfCounts();
+//              float mySensorTime = (sensorCountsEnd - sensorCountsStart) / dFrequency;
+
                 if ((sensorTime > 0.001) && (sensorTime < 0.100))     // if valid, run the stats on it
                 {
+//                    sensorTime -= mySensorTime; // log the difference!
+
                     // total it up for computing the average and variance
                     m_totalSensorTime += sensorTime;
                     m_totalSensorTime2 += (double)sensorTime * sensorTime;
                     m_sensorCount++;
 
-                    // scan for min
+                    // scan for min 
                     if (sensorTime < m_minSensorTime)
                         m_minSensorTime = sensorTime;
 
@@ -499,10 +506,10 @@ void Game::Tick()
                         m_maxSensorTime = sensorTime;
                 }
             }
-            else   // we are not flashing so just wait for the flip queue to update with the black frame
-            {
-                Sleep(50);
-            }
+//            else   // we are not flashing so just wait for the flip queue to update with the black frame
+
+            // make sure each frame lasts long enough for the sensor to detect it.
+            Sleep(200);
         }
         else      // we are not using the sensor, just track in-PC timings
         {
@@ -550,9 +557,10 @@ void Game::Tick()
 
                 // compute how much of frame time to sleep by subtracting time running CPU/GPU
                 m_sleepDelay = 1000.0 * (m_targetFrameTime - avgRunTime);
-
-                if (m_sleepDelay <  0.0) m_sleepDelay =  0.0;                               // limit to valid range
-                if (m_sleepDelay > 50.0) m_sleepDelay = 50.0;
+                if (m_sleepDelay <  0.0)                                              // limit to valid range
+                        m_sleepDelay =  0.0;
+                if (m_sleepDelay > 50.0)
+                        m_sleepDelay = 50.0;
 
                 // Hopefully set correct duration for this frame by sleeping enough
                 m_frameLog[0]->sleepCounts = getPerfCounts();
@@ -561,23 +569,23 @@ void Game::Tick()
 
             // log when app logic starts on the GPU
             m_frameLog[0]->updateCounts = getPerfCounts();
-            Update();                                       // actually do some CPU workload stuff
+            Update();                                           // actually do some CPU workload stuff
 
             // log when drawing starts on the GPU
             m_frameLog[0]->drawCounts = getPerfCounts();
             // Draw()
-            Render();                                       // update screen (before we have all values for this frame)
+            Render();                                           // update screen (before we have all values for this frame)
 
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
-            // Show the new frame
+            // Call Present() to show the new frame
             m_deviceResources->Present();
 
             // log time when vsync happens on display
-    //      m_frameLog[0]->syncCounts = presentCounts;      // clear this as we don't know until next frame
+    //      m_frameLog[0]->syncCounts = presentCounts;          // clear this as we don't know until next frame
 
             // log time when photons arrive at photocell
-    //      m_frameLog[0]->photonCounts = presentCounts;    // clear this as we don't know until next frame
+    //      m_frameLog[0]->photonCounts = presentCounts;        // clear this as we don't know until next frame
 
 // track frame time for frame rate
             m_lastFrameTime = m_frameTime;
@@ -604,26 +612,26 @@ void Game::Tick()
 #endif
                 // accumulate Running time for computing Average and Variance
                 double sleepTime = (m_frameLog[0]->updateCounts - m_frameLog[0]->sleepCounts) / dFrequency;
-                double runningTime  = m_frameTime - sleepTime;  // all the time last frame not sleeping
-                m_totalRunningTime  += runningTime;
+                double runningTime = m_frameTime - sleepTime;  // all the time last frame not sleeping
+                m_totalRunningTime += runningTime;
                 m_totalRunningTime2 += runningTime * runningTime;
 
                 // accumulate Render time for computing Average
-                double renderTime  = (m_frameLog[0]->presentCounts - m_frameLog[0]->drawCounts) / dFrequency;
-                m_totalRenderTime  += renderTime;
+                double renderTime = (m_frameLog[0]->presentCounts - m_frameLog[0]->drawCounts) / dFrequency;
+                m_totalRenderTime += renderTime;
                 m_totalRenderTime2 += renderTime * renderTime;
 
                 // accumulate Present time for computing Average
-                double presentTime  = (m_frameLog[2]->syncCounts - m_frameLog[2]->presentCounts) / dFrequency;
-                m_totalPresentTime  += presentTime;
+                double presentTime = (m_frameLog[2]->syncCounts - m_frameLog[2]->presentCounts) / dFrequency;
+                m_totalPresentTime += presentTime;
                 m_totalPresentTime2 += presentTime * presentTime;
-
-
             }
+            else
+                float x = 1.f;                      // this line just for setting a breakpoint on
         }
     }
     else
-        Sleep( 15 );                                      // update at ~30Hz even when paused.
+        Sleep( 15 );                                      // update at ~60Hz even when paused.
                  // save for use next frame
 
     // track data since app startup
@@ -1250,7 +1258,16 @@ void Game::UpdateDxgiRefreshRatesInfo()
     auto sc = m_deviceResources->GetSwapChain();
     DX::ThrowIfFailed(sc->GetContainingOutput(&output));
 
-    UINT flags = 0;
+    // TODO: Get the current display refresh rate:
+    DXGI_SWAP_CHAIN_FULLSCREEN_DESC pDescFS;
+    sc->GetFullscreenDesc( &pDescFS );
+    m_verticalSyncRate = pDescFS.RefreshRate;       // TODO: this only ever returns 0.
+
+//  m_OSFrameRate = ??
+
+    DEVMODE DevNode;
+    EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &DevNode );
+    m_displayFrequency = DevNode.dmDisplayFrequency;
 
     DXGI_FORMAT format;
     if ( CheckHDR_On() )
@@ -1263,6 +1280,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
     }
 
     // first call to get the number of modes supported in this format
+    UINT flags = 0;
     output->GetDisplayModeList(format, flags, &m_numModes, 0);
 
     // second call collects them into an array
@@ -1289,6 +1307,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     // TODO tag which mode is current (defaults to highest for now)
 
+
     // print the fixed rate V-Total video frame rate range supported
 
     IDXGISwapChainMedia* scMedia;
@@ -1311,6 +1330,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
         m_vTotalFixedSupported = true;
 
     // initialize those scenes that should default to max frame rate
+    // TODO: Keep this below actual frame rate of OS!
     m_latencyTestFrameRate = m_maxFrameRate;
 
 }
@@ -1329,6 +1349,8 @@ void Game::UpdateDxgiColorimetryInfo()
 
     ComPtr<IDXGIAdapter> dxgiAdapter;
     DX::ThrowIfFailed(dxgiDevice->GetAdapter(&dxgiAdapter));
+
+    dxgiAdapter->GetDesc(&m_adapterDesc);
 
     ComPtr<IDXGIFactory4> dxgiFactory;
     DX::ThrowIfFailed(dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory)));
@@ -1383,13 +1405,19 @@ void Game::UpdateDxgiColorimetryInfo()
 	// get PQ code at MaxLuminance
 	m_maxPQCode = (int) roundf(1023.0f*Apply2084(m_rawOutDesc.MaxLuminance / 10000.f));
 
-	m_dxgiColorInfoStale = false;
+    m_monitorName = foundMonitor.DisplayName();
 
-    //	ACPipeline();
+    m_connectionKind = foundMonitor.ConnectionKind();
+    m_physicalConnectorKind = foundMonitor.PhysicalConnector();
+//  m_connectionDescriptorKind = foundMonitor.DisplayMonitorDescriptorKind();
+// TODO: apparently the method to return this does not exist in Windows.
+
+    m_dxgiColorInfoStale = false;
 
     // make sure refresh rates are also current
     UpdateDxgiRefreshRatesInfo();
 
+    //	ACPipeline();
 }
 
 
@@ -1398,7 +1426,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.84\n\n";
+    text << L"\n\nVersion 0.85\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1450,9 +1478,83 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
 {
     std::wstringstream text;
 
-    text << L"Connection: ";
+    text << L"Render GPU: ";
+    text << m_adapterDesc.Description;
+
+    text << L"\nMonitor: ";
+    text << m_monitorName.c_str();
+
+    text << L"\nDisplay: ";
     WCHAR* DisplayName = wcsrchr(m_outputDesc.DeviceName, '\\');
     text << ++DisplayName;
+
+    text << L"\nConnector: ";
+
+    switch (m_connectionKind)
+    {
+    case DisplayMonitorConnectionKind::Internal:
+        text << "Internal Panel ";
+        break;
+    case DisplayMonitorConnectionKind::Wired:
+        text << "Wired ";
+        break;
+    case DisplayMonitorConnectionKind::Wireless:
+        text << "Wireless";
+        break;
+    case DisplayMonitorConnectionKind::Virtual:
+        text << "Virtual";
+        break;
+    default:
+        text << "Error";
+        break;
+    }
+
+    switch ( m_physicalConnectorKind )
+    {
+    case DisplayMonitorPhysicalConnectorKind::Unknown:
+        if ( m_connectionKind != DisplayMonitorConnectionKind::Internal )
+            text << "unknown";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::HD15:
+        text << "HD-15";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::AnalogTV:
+        text << "Analog TV";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::Dvi:
+        text << "DVI";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::Hdmi:
+        text << "HDMI";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::Lvds:
+        text << "LVDS";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::Sdi:
+        text << "SDI";
+        break;
+    case DisplayMonitorPhysicalConnectorKind::DisplayPort:
+        text << "DisplayPort";
+        break;
+    default:
+        text << "Error";
+        break;
+    }
+
+#if 0 // TODO: apparently the method to return this does not exist in Windows.
+    switch ( m_connectionDescriptorKind )
+    {
+    case DisplayMonitorDescriptorKind::Edid:
+        text << " with EDID";
+        break;
+    case DisplayMonitorDescriptorKind::DisplayId:
+        text << " with DisplayID";
+        break;
+    default:
+        text << " ";  // " Error"; 
+        break;
+    }
+#endif
 
     text << L"\nColorspace: [";
     text << std::to_wstring(m_outputDesc.ColorSpace);
@@ -1469,9 +1571,9 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
         text << L"] Unknown";
         break;
     }
-    text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight << " x ";
-    text << std::to_wstring(m_outputDesc.BitsPerColor);
-    text << L"bits\n";
+    text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight;
+    text << " x " << std::to_wstring(m_outputDesc.BitsPerColor) << L"bits @ ";
+    text << m_displayFrequency << L"Hz\n";
 
     text << "\nAdaptive Display Modes supported at this resolution and bit depth:\n";
 
@@ -1480,14 +1582,21 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
     {
         if (m_pModeList[iMode].Width == m_modeWidth && m_pModeList[iMode].Height == m_modeHeight)
         {
-            double rate = (double)m_pModeList[iMode].RefreshRate.Numerator
-                        / (double)m_pModeList[iMode].RefreshRate.Denominator;
+            UINT num = m_pModeList[iMode].RefreshRate.Numerator;
+            UINT den = m_pModeList[iMode].RefreshRate.Denominator;
+            double rate = (double) num / (double) den;
             text << L"      ";
             text << fixed << setw(10) << setprecision(3) << rate << "Hz  ";
-            text << fixed << setw(10) << setprecision(4) << 1000. / rate << "ms\n";
+            text << fixed << setw(10) << setprecision(4) << 1000. / rate << "ms";
+
+//            if (num == m_verticalSyncRate.Numerator
+//             && den == m_verticalSyncRate.Denominator)
+            if ( abs(rate - m_displayFrequency) < 0.001 )
+                text << L" <-- Current Max";
+
+            text << L"\n";
         }
     }
-    // TODO tag which mode is current (defaults to highest for now)
 
     m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
     text << "  Ratio:" << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
@@ -1675,8 +1784,9 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
     text << L"all settings to the default or factory state.\n\n";
 
 	text << L"For internal panels, set the OS \'Brightness\' slider to default.\n";
+//  text << L" in the Advanced color pane,";
 	text << L"Set the \'SDR color appearance\' slider to the leftmost point.\n";
-	text << L"DO NOT CHANGE BRIGHTNESS SLIDERS AFTER APP START.\n\n";
+//	text << L"DO NOT CHANGE BRIGHTNESS SLIDERS AFTER APP START.\n\n";
 
 	text << L"Be sure the \'Night light' setting is off.\n";
 
@@ -1996,9 +2106,9 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
             title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
             title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms";
-            title << L"                          avg     var\n";
+            title << L"                                                          avg     var\n";
 
-            int numCols = 6;
+            int numCols = 10;
             assert(numCols <= frameLogLength);
 
             double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
@@ -3249,7 +3359,7 @@ void Game::CreateWindowSizeDependentResources()
     // But we will interpret the struct members as: Left, Left, Width, Height
     // This lets us pack the size (for IDWriteTextLayout) and offset (for DrawText)
     // into a single struct.
-    m_testTitleRect = { 0.0f, 0.0f, 800.0f, 100.0f };
+    m_testTitleRect = { 0.0f, 0.0f, 1280.0f, 100.0f };
 
 	auto logicalSize = m_deviceResources->GetLogicalSize();
 
