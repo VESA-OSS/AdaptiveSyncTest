@@ -79,10 +79,12 @@ void Game::ConstructorInternal()
     m_sensorNits = 27.0f;       // threshold for detection by sensor in nits                        4
     m_sensing = false;          // 
     m_flash = false;            // whether we are flashing the photocell this frame                 4
+    m_lastFlash = false;        // whether last frame was a flash                                   4
+    m_lastLastFlash = false;    // whether last frame was a flash                                   4
     ResetSensorStats();         // initialize the sensor tracking data                              4
     ResetFrameStats();          // initialize the frame timing data
     m_avgInputTime = 0.006;     // hard coded at 6ms until dongle can drive input
-#define USB_TIME 0.002          // time for 1 round trip on USB wire                                4
+#define USB_TIME (0.002)        // time for 1 round trip on USB wire       2ms?                     4
 
     m_autoG2G = false;          // if we are in automatic sequence mode                             5
     m_from = true;              // start with "From" color                                          5
@@ -433,7 +435,10 @@ void Game::Tick()
     {
         if (m_sensing)
         {
-            m_flash = m_frameCounter & 0x01;                     // switch every other frame
+            m_lastLastFlash = m_lastFlash;                      // lagged from 2 frames ago
+            m_lastFlash = m_flash;                              // lagged from previous frame
+            m_flash = (m_frameCounter % 4) == 0;                // only flash 1 of every 4 frames
+
 #if 0
             // if there should be a flash this frame, reconnect the sensor (should not be required every frame)
             if (m_flash)
@@ -481,35 +486,40 @@ void Game::Tick()
             // if this was a frame that included a flash, then read the photocell's measurement
             if (m_flash)
             {
-                float sensorTime = 0.f;                       // time from start of latency measurement sensor in sec
-                sensorTime = m_sensor.ReadLatency();          // blocking call
+                // time from start of latency measurement sensor in sec
+                m_sensorTime = m_sensor.ReadLatency();          // blocking call
 
                 // get own estimate of sensorTime based on QPC
                 UINT sensorCountsEnd = getPerfCounts();
-//              float mySensorTime = (sensorCountsEnd - sensorCountsStart) / dFrequency;
+//              m_sensorTime = (sensorCountsEnd - sensorCountsStart) / dFrequency;
 
-                if ((sensorTime > 0.001) && (sensorTime < 0.100))     // if valid, run the stats on it
+                if ((m_sensorTime > 0.001) && (m_sensorTime < 0.100))     // if valid, run the stats on it
                 {
-//                    sensorTime -= mySensorTime; // log the difference!
 
                     // total it up for computing the average and variance
-                    m_totalSensorTime += sensorTime;
-                    m_totalSensorTime2 += (double)sensorTime * sensorTime;
+                    m_totalSensorTime += m_sensorTime;
+                    m_totalSensorTime2 += (double) m_sensorTime * m_sensorTime;
                     m_sensorCount++;
 
                     // scan for min 
-                    if (sensorTime < m_minSensorTime)
-                        m_minSensorTime = sensorTime;
+                    if (m_sensorTime < m_minSensorTime)
+                        m_minSensorTime = m_sensorTime;
 
                     // scan for max
-                    if (sensorTime > m_maxSensorTime)
-                        m_maxSensorTime = sensorTime;
+                    if (m_sensorTime > m_maxSensorTime)
+                        m_maxSensorTime = m_sensorTime;
                 }
             }
+
 //            else   // we are not flashing so just wait for the flip queue to update with the black frame
 
             // make sure each frame lasts long enough for the sensor to detect it.
-            Sleep(200);
+            Sleep( 2 );
+
+            m_lastFrameTime = m_frameTime;
+            m_frameTime = (m_frameLog[0]->readCounts - m_lastReadCounts) / dFrequency;
+
+            m_lastReadCounts = m_frameLog[0]->readCounts;
         }
         else      // we are not using the sensor, just track in-PC timings
         {
@@ -1267,7 +1277,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     DEVMODE DevNode;
     EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &DevNode );
-    m_displayFrequency = DevNode.dmDisplayFrequency;
+    m_displayFrequency = DevNode.dmDisplayFrequency;  // TODO: this only works on the iGPU!
 
     DXGI_FORMAT format;
     if ( CheckHDR_On() )
@@ -1331,7 +1341,8 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     // initialize those scenes that should default to max frame rate
     // TODO: Keep this below actual frame rate of OS!
-    m_latencyTestFrameRate = m_maxFrameRate;
+    m_latencyTestFrameRate = m_maxFrameRate; 
+    m_latencyTestFrameRate = m_displayFrequency;
 
 }
 
@@ -1991,12 +2002,14 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
     if (m_newTestSelected)
     {
         // be sure to connect to sensor on entering this test
-       if ( !m_sensorConnected )
+        if (!m_sensorConnected)
+        {
             m_sensorConnected = m_sensor.ConnectSensor();
-        m_sensor.SetActivationThreshold( m_sensorNits );
+            m_sensor.SetActivationThreshold(m_sensorNits);
+            ResetSensorStats();
+        }
 
         ResetFrameStats();
-        ResetSensorStats();
     }
 
     // compute background color
@@ -2063,16 +2076,20 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
 
         if ( m_sensing )
         {
-//          if (m_flash)
-//              title << "      ";
             title << m_frameCounter;
-            // print frame rate we were targeting for this test (not the rate we are sampling lag at)
+            // print frame rate we are sampling at:
             title << fixed;
-//          title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
-//          title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
-//          title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-//          title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
-            title << L"\n";
+
+#ifdef TESTING
+            title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+            title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+            if (m_lastLastFlash) title << L"\n";
+            title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+            title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+            if (!m_lastLastFlash) title << L"\n";
+#else
+            title << L"\n\n";
+#endif
 
             int count = m_sensorCount;
             if (count <= 0) count = 1;
@@ -2083,6 +2100,8 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             {
                 // print total end-to-end latency stats from sensor
                 title << " S E N S I N G  @ " << setprecision(0) << m_sensorNits << "Nits threshold\n";
+                title << "\nSensor: " << setw(7) << setprecision(3) << m_sensorTime * 1000. << L"ms\n";   // current value this frame
+
                 title << "Over last " << m_sensorCount << " samples\n";
                 title << "Avg: " << setprecision(3) << setw(7);
                 title << avgSensorTime * 1000.0;

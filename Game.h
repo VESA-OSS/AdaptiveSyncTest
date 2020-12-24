@@ -17,6 +17,7 @@
 #include <map>
 
 #include <winrt\Windows.Devices.Display.h>
+#include <winrt\Windows.Devices.Display.Core.h>
 #include <winrt\Windows.Devices.Enumeration.h>
 
 struct rawOutputDesc
@@ -350,6 +351,9 @@ private:
     bool                        m_sensorConnected;          // connection to the photocell dongle is live       4
     bool                        m_sensing;                  // whether we are running the sensor                4
     bool                        m_flash;                    // whether we are flashing the photocell this frame 4
+    bool                        m_lastFlash;                // whether last frame was a flash frame             4
+    bool                        m_lastLastFlash;            // whether last last frame was a flash frame        4
+    double                      m_sensorTime;               // time spent in the sensor this frame              4
     double                      m_minSensorTime;            // min value of end-to-end lag measured             4
     double                      m_maxSensorTime;            // max value of end-to-end lag measured             4
     INT32                       m_sensorCount;              // number of valid latency samples since reset      4
