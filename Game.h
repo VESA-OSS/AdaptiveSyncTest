@@ -180,6 +180,7 @@ public:
     void ChangeSubtest(bool increment);
     void ChangeG2GFromIndex(bool increment);
     void ChangeG2GToIndex(bool increment);
+    void ChangeG2GInterval(bool increment);
     void StartTestPattern(void);
     void ToggleVTotalMode(void);
     void TogglePause(void);
@@ -360,9 +361,10 @@ private:
     double                      m_totalSensorTime;          // sum of sensor time. Used to compute average      4
     double                      m_totalSensorTime2;         // sum of squares. Used to compute variance         4
 
-    bool                        m_from;                     // whether we use the "From" color or "To" color    5
+    bool                        m_g2gFrom;                     // whether we use the "From" color or "To" color    5
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
+    INT32                       m_g2gInterval;              // number of frames to hold between switches        5
     bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
 
     DropRateEnum                m_frameDropRateEnum;        // select frame rate in frame drop test             6

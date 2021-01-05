@@ -325,6 +325,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             game->ChangeG2GFromIndex(false);
             break;
 
+        case VK_OEM_PLUS:
+            game->ChangeG2GInterval(true);
+            break;
+        case VK_OEM_MINUS:
+            game->ChangeG2GInterval(false);
+            break;
+
         case VK_ESCAPE:         // Youtube compat
             if (g_fullscreen)
             {

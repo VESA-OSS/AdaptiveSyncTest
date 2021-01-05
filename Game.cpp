@@ -87,9 +87,11 @@ void Game::ConstructorInternal()
 #define USB_TIME (0.002)        // time for 1 round trip on USB wire       2ms?                     4
 
     m_autoG2G = false;          // if we are in automatic sequence mode                             5
-    m_from = true;              // start with "From" color                                          5
+    m_g2gFrom = true;           // start with "From" color                                          5
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
+    m_g2gInterval = 3;          // default interval for G2G switching                               5
+
     m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
     m_judderTestFrameRate = 60.;//
@@ -861,9 +863,9 @@ void Game::UpdateGrayToGray()
         m_testTimeRemainingSec -= m_frameTime;
         if (m_testTimeRemainingSec < 0.f)           // timer has run out, so change something
         {
-            if (m_from)
+            if (m_g2gFrom)
             {
-                m_from = false;                     // switch to the To color
+                m_g2gFrom = false;                     // switch to the To color
             }
             else  // we were on the To color
             {
@@ -876,20 +878,26 @@ void Game::UpdateGrayToGray()
                     if (m_g2gToIndex > numGtGValues - 1)
                         m_g2gToIndex = 0;
                 }
-                m_from = true;
+                m_g2gFrom = true;
             }
             if ( m_g2gFromIndex != m_g2gToIndex )       // skip the diagonal where to and from are same
-                m_testTimeRemainingSec = 0.5f; //  0.016666666f * 4;      // reset the timer to 4 frames
+                m_testTimeRemainingSec = 0.250f;         //  quarter second
         }
     }
     else      // we are in manual state setting mode (not auto sequence)
     {
-//      m_from = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
-        m_from = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
+//      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
+//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
+//      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
+//      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
+
+        if ((m_frameCounter % m_g2gInterval) == 0)
+            m_g2gFrom = !m_g2gFrom;
     }
 
     // compute color for test patch
-    if ( m_from )
+    if (m_g2gFrom)
         m_color = GrayToGrayValue(m_g2gFromIndex);
     else
         m_color = GrayToGrayValue(m_g2gToIndex);
@@ -1066,6 +1074,24 @@ void Game::ChangeG2GToIndex(bool increment)
     }
 
     m_g2gToIndex = m_g2gToIndex % (numGtGValues + 1);
+
+}
+
+void Game::ChangeG2GInterval(bool increment)
+{
+    if (increment)
+    {
+        m_g2gInterval++;
+    }
+    else
+    {
+        m_g2gInterval--;
+    }
+    if (m_g2gInterval > 10)      // TODO make a constant for this
+        m_g2gInterval = 10;
+
+    if (m_g2gInterval < 1)
+        m_g2gInterval = 1;
 
 }
 
@@ -1437,7 +1463,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.85\n\n";
+    text << L"\n\nVersion 0.86\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -2341,7 +2367,8 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 	if (m_showExplanatoryText)
 	{
 		std::wstringstream title;
-		title << L"5 Gray To Gray:\n";
+		title << L"5 Gray To Gray:    ";
+        title << L"Switching every " << m_g2gInterval << " frames.\n";
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -2362,6 +2389,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         {
             title << L"Select 'From' brightness level using ,/. aka </> keys\n";
             title << L"Select 'To' brightness level using Up/Down arrows\n";
+            title << L"Select switch interval using +/- keys\n";
         }
         if (!CheckHDR_On())
         {
