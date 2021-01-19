@@ -50,6 +50,7 @@ void Game::ConstructorInternal()
         throw std::exception("QueryPerformanceFrequency");
     }
 
+    m_shiftKey = false;         // Whether the shift key is pressed
     m_pModeList = NULL;         // ptr to list of display modes on this output.
     m_numModes = 0;
 
@@ -728,6 +729,13 @@ void Game::TickOld()
 // Every test pattern could have an update routine to call in the main update routine in Tick()
 void Game::UpdateFlickerConstant()                                                                      //  2
 {
+    float maxFrameRate = m_maxFrameRate;
+    if (m_displayFrequency > 20)
+    {
+        if (maxFrameRate > m_displayFrequency)        // clamp to current mode
+            maxFrameRate = m_displayFrequency;
+    }
+
     // determine what rate to use based on the up/down arrow key setting
     switch (m_flickerRateIndex)
     {
@@ -736,7 +744,7 @@ void Game::UpdateFlickerConstant()                                              
         break;
 
     case 1:
-        m_targetFrameRate = m_maxFrameRate;        // max reported by implementation
+        m_targetFrameRate = maxFrameRate;          // max reported by implementation
         break;
 
     default:
@@ -751,6 +759,14 @@ void Game::UpdateFlickerConstant()                                              
 // compute frame rate for this Flicker test with variable frame rate:                                       3
 void Game::UpdateFlickerVariable()
 {
+    float maxFrameRate = m_maxFrameRate;
+    if (m_displayFrequency > 20)
+    {
+        if (maxFrameRate > m_displayFrequency)        // clamp to current mode
+            maxFrameRate = m_displayFrequency;
+    }
+
+    // vary frame rate based on current pattern
     switch (m_waveEnum)
     {
         case WaveEnum::ZigZag:    // zig-zag not square wave
@@ -758,9 +774,9 @@ void Game::UpdateFlickerVariable()
             if (m_waveUp)
             {
                 m_targetFrameRate += 1;
-                if (m_targetFrameRate > m_maxFrameRate)
+                if (m_targetFrameRate > maxFrameRate)
                 {
-                    m_targetFrameRate = m_maxFrameRate;
+                    m_targetFrameRate = maxFrameRate;
                     m_waveUp = false;
                 }
             }
@@ -782,7 +798,7 @@ void Game::UpdateFlickerVariable()
             if (m_waveCounter > 0)
             {
                 if (m_waveUp)
-                    m_targetFrameRate = m_maxFrameRate;
+                    m_targetFrameRate = maxFrameRate;
                 else
                     m_targetFrameRate = m_minFrameRate;
             }
@@ -796,7 +812,7 @@ void Game::UpdateFlickerVariable()
 
         case WaveEnum::Random:
         {
-            double range = m_maxFrameRate - m_minFrameRate;
+            double range = maxFrameRate - m_minFrameRate;
             m_targetFrameRate = m_minFrameRate + range * rand() / RAND_MAX;
             // TODO clamp max delta from current frame rate to some limit?s
         }
@@ -804,8 +820,8 @@ void Game::UpdateFlickerVariable()
 
         case WaveEnum::Sine:
         {
-            double amplitude = 0.5 * (m_maxFrameRate - m_minFrameRate);
-            double baseline = 0.5 * (m_maxFrameRate + m_minFrameRate);
+            double amplitude = 0.5 * (maxFrameRate - m_minFrameRate);
+            double baseline = 0.5 * (maxFrameRate + m_minFrameRate);
             double angle = m_totalTimeSinceStart;
 
             m_targetFrameRate = amplitude * sin(angle) + baseline;
@@ -813,7 +829,7 @@ void Game::UpdateFlickerVariable()
         break;
 
         case WaveEnum::Max:
-            m_targetFrameRate = m_maxFrameRate;
+            m_targetFrameRate = maxFrameRate;
             break;
     }
 
@@ -836,11 +852,11 @@ float Game::GrayToGrayValue(INT32 index)
     {
         switch (index)
         {
-        case 0: nits = 0; break;
+        case 0: nits = 0.000000; break;
         case 1: nits = 0.047366 * m_outputDesc.MaxLuminance; break;
         case 2: nits = 0.217638 * m_outputDesc.MaxLuminance; break;
         case 3: nits = 0.531049 * m_outputDesc.MaxLuminance; break;
-        case 4: nits = m_outputDesc.MaxLuminance; break;
+        case 4: nits = 1.000000 * m_outputDesc.MaxLuminance; break;
         }
         c = nitstoCCCS(nits);
     }
@@ -1039,90 +1055,69 @@ void Game::Update()
 
 }
 
-void Game::ChangeG2GFromIndex(bool increment)
+// Keep value in range from min to max by clamping
+float clamp(float v, float min, float max)		// inclusive
 {
-    if (increment)
-    {
-        m_g2gFromIndex++;
-        if (m_g2gFromIndex > numGtGValues - 1)
-            m_g2gFromIndex = 0;
-    }
-    else
-    {
-        m_g2gFromIndex--;
-        if (m_g2gFromIndex < 0)
-            m_g2gFromIndex = numGtGValues - 1;
-    }
-
-    m_g2gFromIndex = m_g2gFromIndex % (numGtGValues + 1);
-
+    if (v > max)
+        v = max; else
+        if (v < min)
+            v = min;
+    return v;
 }
 
-void Game::ChangeG2GToIndex(bool increment)
+// Keep value in from min to max by wrapping
+float wrap(float v, float min, float max)			// inclusive
 {
-    if (increment)
-    {
-        m_g2gToIndex++;
-        if (m_g2gToIndex > numGtGValues - 1)
-            m_g2gToIndex = 0;
-    }
-    else
-    {
-        m_g2gToIndex--;
-        if (m_g2gToIndex < 0)
-            m_g2gToIndex = numGtGValues - 1;
-    }
-
-    m_g2gToIndex = m_g2gToIndex % (numGtGValues + 1);
-
+    float range = max - min + 1.f;
+    while (v >= max)
+        v -= range;
+    while (v < min)
+        v += range;
+    return v;
 }
 
-void Game::ChangeG2GInterval(bool increment)
+void Game::ChangeG2GFromIndex( INT32 increment)
 {
-    if (increment)
-    {
-        m_g2gInterval++;
-    }
-    else
-    {
-        m_g2gInterval--;
-    }
-    if (m_g2gInterval > 10)      // TODO make a constant for this
-        m_g2gInterval = 10;
+    m_g2gFromIndex += increment;
+    m_g2gFromIndex = wrap(m_g2gFromIndex, 0, numGtGValues-1 );
+}
 
-    if (m_g2gInterval < 1)
-        m_g2gInterval = 1;
+void Game::ChangeG2GToIndex( INT32 increment)
+{
+    m_g2gToIndex += increment;
+    m_g2gToIndex = wrap(m_g2gToIndex, 0, numGtGValues-1 );
+}
 
+void Game::ChangeG2GInterval(INT32 increment)
+{
+    m_g2gInterval += increment;
+    m_g2gInterval = clamp(m_g2gInterval, 1, 10);
+}
+
+void Game::SetShift(bool shift)
+{
+    m_shiftKey = shift;
 }
 
 // handle the up/down arrow key inputs
-void Game::ChangeSubtest(bool increment)
+void Game::ChangeSubtest( INT32 increment)
 {
+    if (m_shiftKey)
+        increment *= 10;
+
     int testTier;
     switch (m_currentTest)
     {
     case TestPattern::PanelCharacteristics:
         testTier = (int)m_testingTier;
-        testTier += (increment ? 1 : -1);
+        testTier += increment;
         testTier = clamp(testTier, (int)TestingTier::DisplayHDR400, (int)TestingTier::DisplayHDR10000);
         m_testingTier = (TestingTier)testTier;
         break;
 
     case TestPattern::FlickerConstant:                                                          // 2
-        if (increment)
-        {
-            m_flickerRateIndex++;
-            if (m_flickerRateIndex > numMediaRates + 1)     // add 2 for min/max
-                m_flickerRateIndex = 0;
-        }
-        else
-        {
-            m_flickerRateIndex--;
-            if (m_flickerRateIndex < 0)
-                m_flickerRateIndex = numMediaRates + 1;     // add 2 for min/max
-        }
-//      m_flickerRateIndex = m_flickerRateIndex % (numMediaRates + 1);
-        ResetFrameStats();
+        m_flickerRateIndex += increment;
+        m_flickerRateIndex = wrap(m_flickerRateIndex, 0., numMediaRates + 1);
         break;
 
     case TestPattern::FlickerVariable:                                                          // 3
@@ -1158,25 +1153,14 @@ void Game::ChangeSubtest(bool increment)
         if (m_sensing)
         {
             // adjust the sensor detection level
-            m_sensorNits += ( increment ? -1.f : +1.f );
-            m_sensor.SetActivationThreshold(m_sensorNits);
+            m_sensorNits += increment;
+            m_sensorNits = clamp(m_sensorNits, 0, 10000);
+            m_sensor.SetActivationThreshold( m_sensorNits );
         }
         else
         {
-            double delta = 1.0;
-            if (m_latencyTestFrameRate >= 69.6) delta = 2.0;
-            if (m_latencyTestFrameRate >= 149.6) delta = 5.0;
-            if (m_latencyTestFrameRate >= 239.6) delta = 10.0;
-            if (m_latencyTestFrameRate >= 479.6) delta = 30.0;
-
-            if (increment)
-            {
-                m_latencyTestFrameRate -= delta;
-            }
-            else
-            {
-                m_latencyTestFrameRate += delta;
-            }
+            m_latencyTestFrameRate += increment;
+            m_latencyTestFrameRate = clamp( m_latencyTestFrameRate, 20., 1000. );
         }
         break;
     }
@@ -1247,41 +1231,15 @@ void Game::ChangeSubtest(bool increment)
 
     case TestPattern::GameJudder:                                                               // 9
     {
-        double delta = 1.0;
-        if (m_judderTestFrameRate >= 69.6) delta = 2.0;
-        if (m_judderTestFrameRate >= 149.6) delta = 5.0;
-        if (m_judderTestFrameRate >= 239.6) delta = 10.0;
-        if (m_judderTestFrameRate >= 479.6) delta = 30.0;
-
-        if (increment)
-        {
-            m_judderTestFrameRate -= delta;
-        }
-        else
-        {
-            m_judderTestFrameRate += delta;
-        }
+        m_judderTestFrameRate += increment;
+        m_judderTestFrameRate = clamp(m_judderTestFrameRate, 20, 1000);
         break;
     }
 
     case TestPattern::Tearing:                                                                  // 0
-    {
-        double delta = 1.0;
-        if (m_tearingTestFrameRate >= 69.6) delta = 2.0;
-        if (m_tearingTestFrameRate >= 149.6) delta = 5.0;
-        if (m_tearingTestFrameRate >= 239.6) delta = 10.0;
-        if (m_tearingTestFrameRate >= 479.6) delta = 30.0;
-
-        if (increment)
-        {
-            m_tearingTestFrameRate -= delta;
-        }
-        else
-        {
-            m_tearingTestFrameRate += delta;
-        }
+        m_tearingTestFrameRate += increment;
+        m_tearingTestFrameRate = clamp(m_tearingTestFrameRate, 20, 1000);
         break;
-    }
 
     }
 }
@@ -1463,7 +1421,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.86\n\n";
+    text << L"\n\nVersion 0.87\n\n";
     //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1628,7 +1586,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
 
 //            if (num == m_verticalSyncRate.Numerator
 //             && den == m_verticalSyncRate.Denominator)
-            if ( abs(rate - m_displayFrequency) < 0.001 )
+            if ( abs(rate - m_displayFrequency) < 0.1 )
                 text << L" <-- Current Max";
 
             text << L"\n";
@@ -1849,13 +1807,13 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
     float c; 
     if (CheckHDR_On())
     {
-        float nits = 10.0f;
+        float nits = 40.0f;
         c = nitstoCCCS( nits );
     }
     else
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
-        float sRGBval = 65;
+        float sRGBval = 127;
         c = RemoveSRGBCurve(sRGBval / 255.0f);
     }
 
@@ -1920,7 +1878,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
             }
         }
 
-        title << L"Adjust luminance to 10nits using UI slider or OSD\n";
+        title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
 
@@ -1940,13 +1898,13 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
     float c;
     if (CheckHDR_On())
     {
-        float nits = 10.0f;
+        float nits = 40.0f;
         c = nitstoCCCS(nits);
     }
     else
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
-        float sRGBval = 65;
+        float sRGBval = 127;
         c = RemoveSRGBCurve(sRGBval / 255.0f);
     }
 
@@ -2012,7 +1970,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
 			title << sRGBval;
 		}
 #endif
-        title << L"Adjust luminance to 10nits using UI slider or OSD\n";
+        title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select zigzag vs square wave etc using Up/Down arrows\n";
         title << m_hideTextString;
 
@@ -2343,10 +2301,10 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
     ComPtr<ID2D1SolidColorBrush> testBrush;                     // 10% area test square
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &testBrush));
 
-    float refreshRate = m_maxFrameRate;                  // this test should run at max rate
-    m_targetFrameRate = refreshRate;
-
-//  float dpi = m_deviceResources->GetDpi();
+    // CTS spec says test #5 should run at display max refresh rate
+    m_targetFrameRate = m_maxFrameRate;                         // this test should run at max rate
+    if (m_displayFrequency > 20)
+        m_targetFrameRate = m_displayFrequency;                 // clamp to current mode limit
 
     // draw test pattern
     float size = sqrt((logSize.right - logSize.left) * (logSize.bottom - logSize.top));
@@ -3277,12 +3235,14 @@ void Game::RenderText(ID2D1DeviceContext2* ctx, IDWriteTextFormat* fmt, std::wst
 
     if (useBlackText)
     {
-        ComPtr<ID2D1SolidColorBrush> blackBrush;
-        DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f), &blackBrush));
-        ctx->DrawTextLayout(D2D1::Point2F(textPos.left, textPos.top), layout.Get(), blackBrush.Get());
+        // add highlight
+//      ctx->DrawTextLayout(D2D1::Point2F(textPos.left, textPos.top), layout.Get(), m_whiteBrush.Get());
+        ctx->DrawTextLayout(D2D1::Point2F(textPos.left+1, textPos.top+1), layout.Get(), m_blackBrush.Get());
     }
     else
     {
+        // add dropshadow
+        ctx->DrawTextLayout(D2D1::Point2F(textPos.left + 1, textPos.top + 1.), layout.Get(), m_blackBrush.Get());
         ctx->DrawTextLayout(D2D1::Point2F(textPos.left, textPos.top), layout.Get(), m_whiteBrush.Get());
     }
 }
@@ -3634,16 +3594,6 @@ void Game::ChangeTestPattern(bool increment)
     //	m_showExplanatoryText = true;
     m_newTestSelected = true;
 }
-
-float clamp(float v, float min, float max)
-{
-	if (v > max)
-		v = max; else
-	if (v < min)
-		v = min;
-	return v;
-}
-
 
 void Game::StartTestPattern(void)
 {

@@ -177,10 +177,11 @@ public:
     // Test pattern control
     void SetTestPattern(TestPattern testPattern);
     void ChangeTestPattern(bool increment);
-    void ChangeSubtest(bool increment);
-    void ChangeG2GFromIndex(bool increment);
-    void ChangeG2GToIndex(bool increment);
-    void ChangeG2GInterval(bool increment);
+    void ChangeSubtest(INT32 increment);
+    void SetShift(bool shift);
+    void ChangeG2GFromIndex( INT32 increment);
+    void ChangeG2GToIndex( INT32 increment);
+    void ChangeG2GInterval( INT32 increment);
     void StartTestPattern(void);
     void ToggleVTotalMode(void);
     void TogglePause(void);
@@ -268,15 +269,17 @@ private:
 
     // Device resources.
     std::unique_ptr<DX::DeviceResources>                    m_deviceResources;
-    DXGI_ADAPTER_DESC                                       m_adapterDesc;
+    DXGI_ADAPTER_DESC           m_adapterDesc;
+    DXGI_RATIONAL               m_verticalSyncRate;     // Current mode rate from SwapChainDesc -seldom valid
+    DWORD                       m_displayFrequency;     // Current mode rate from EnumDisplaySettings -not precise
 
-    winrt::hstring                                          m_monitorName;                  // friendlier name
+    DXGI_OUTPUT_DESC1           m_outputDesc;
+    rawOutputDesc				m_rawOutDesc;		    // base values from OS before scaling due to brightness setting
+
+    winrt::hstring              m_monitorName;          // friendlier name
     winrt::Windows::Devices::Display::DisplayMonitorConnectionKind        m_connectionKind;               // Internal vs wired
     winrt::Windows::Devices::Display::DisplayMonitorPhysicalConnectorKind m_physicalConnectorKind;        // HDMI vs DisplayPort
     winrt::Windows::Devices::Display::DisplayMonitorDescriptorKind        m_connectionDescriptorKind;     // EDID vs DisplayID
-
-    DXGI_RATIONAL                                           m_verticalSyncRate;     // Current mode's max rate
-    DWORD                                                   m_displayFrequency;     // from EnumDisplaySettings -not precise
 
     Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>        m_gradientBrush;
     Microsoft::WRL::ComPtr<IDWriteTextLayout>               m_testTitleLayout;
@@ -285,19 +288,18 @@ private:
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>            m_blackBrush;
 	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>            m_redBrush;
 
-    DXGI_OUTPUT_DESC1                                       m_outputDesc;
-	rawOutputDesc											m_rawOutDesc;		// base values from OS before scaling due to brightness setting
-
     // Device independent resources.
     Microsoft::WRL::ComPtr<IDWriteTextFormat>               m_smallFormat;
     Microsoft::WRL::ComPtr<IDWriteTextFormat>               m_largeFormat;
     Microsoft::WRL::ComPtr<IDWriteTextFormat>               m_monospaceFormat;
+
     D2D1_RECT_F                 m_testTitleRect; // Where to draw each test's title
     D2D1_RECT_F                 m_largeTextRect; // Where to draw large text for the test, if applicable
 	D2D1_RECT_F					m_MetadataTextRect;
     TestingTier                 m_testingTier;
     TestPattern                 m_currentTest;
     TestPattern                 m_cachedTest;
+    bool                        m_shiftKey;                 // whether shift key is pressed
     float                       m_color;                    // color to use in test patch this frame (grayscale)
 
     INT32                       m_modeWidth;                // resolution of current mode (actually native res now)
