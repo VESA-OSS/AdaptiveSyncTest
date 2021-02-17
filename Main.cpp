@@ -140,6 +140,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
         ToggleFullscreen(hwnd);
 #endif
 
+#if 1       // TODO re-enable cursor?
+
         // We never want to see the cursor in this app.
         CURSORINFO ci = {};
         ci.cbSize = sizeof(CURSORINFO);
@@ -150,11 +152,48 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
         {
             cursorCount = ShowCursor(FALSE); // This decrements cursorCount by 1.
         } while (cursorCount >= 0); // -1 means invisible cursor.
+#endif
+
     }
 
 
-    // Main message loop        // this is a busy wait, no blocking at all
+    // Main message loop
     MSG msg = { 0 };
+
+#if 1
+    // Main message loop:
+    INT waitResult;
+    HANDLE frameLatencyHandle = g_game->GetFrameLatencyHandle();
+    while ((waitResult = MsgWaitForMultipleObjects(1, &frameLatencyHandle, FALSE, 100, QS_ALLINPUT)) != WAIT_FAILED)
+    {
+        // Render and Present
+        if (waitResult == WAIT_OBJECT_0 || waitResult == WAIT_TIMEOUT)
+        {
+            // update this every frame in case it got changed by a resize...
+            frameLatencyHandle = g_game->GetFrameLatencyHandle();
+
+            // do the game loop logic
+            g_game->Tick(); // ideally this would just Present() and the CPU Update and GPU Render are already done
+        }
+        else
+        {
+            while (PeekMessage(&msg, nullptr, 0, 0, TRUE))
+            {
+                if (msg.message == WM_QUIT)
+                {
+                    g_game.reset();
+                    CoUninitialize();
+                    return (int) msg.wParam;
+                }
+
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+        }
+    }
+
+
+#else
     while (WM_QUIT != msg.message)
     {
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -167,11 +206,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
             g_game->Tick();
         }
     }
+#endif
+
 
     g_game.reset();
-
     CoUninitialize();
-
     return (int) msg.wParam;
 }
 
@@ -276,7 +315,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_DESTROY:
-		game->SetMetadataNeutral();		// DWM should do this automatically on full-screen exit
+//      game->ReleaseLatencyHandle();           TODO: finish this!
         game->DisconnectSensor();
         PostQuitMessage(0);
         break;

@@ -13,6 +13,7 @@
 
 #define _USE_MATH_DEFINES
 #include <math.h>
+//#include <iostream>
 //#include <DirectXMath.h>
 
 
@@ -673,7 +674,7 @@ Matrix3x3<T> inv(Matrix3x3<T> m)
 				+ (double) m._13 * ((double)m._21 * (double)m._32 - (double)m._22 * (double)m._31);
 	if (abs(det) < 1.0e-9)
 	{
-		cerr << "Error: Matrix Not Invertible" << endl;
+		cerr << "Error: Matrix Not Invertible\n";
 		abort();
 	}
 	Matrix3x3<T> ret;

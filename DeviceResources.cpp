@@ -268,7 +268,8 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
             backBufferWidth,
             backBufferHeight,
             m_backBufferFormat,
-            DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+//          DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING 
+            DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
             );
 
         if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
@@ -320,12 +321,12 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         swapChainDesc.SampleDesc.Count = 1;
         swapChainDesc.SampleDesc.Quality = 0;
         swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-//      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+//      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
         swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
 //      swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
-
+        swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         // Create a SwapChain from a Win32 window.
         ComPtr<IDXGISwapChain1> swapChain1;
         DX::ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
@@ -342,6 +343,12 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         // This class does not support exclusive full-screen mode and prevents DXGI from responding to the ALT+ENTER shortcut
         DX::ThrowIfFailed(dxgiFactory->MakeWindowAssociation(m_window, DXGI_MWA_NO_ALT_ENTER));
     }
+
+    // swapchain is now created or resized
+    m_swapChain->SetMaximumFrameLatency(1);     // only valid in PresentDuration mode
+
+    // need to update latency handle when it changes like on swapchain create or resize.
+    m_frameLatencyHandle = m_swapChain->GetFrameLatencyWaitableObject();
 
     // Create a render target view of the swap chain back buffer.
     DX::ThrowIfFailed(m_swapChain->GetBuffer(0, IID_PPV_ARGS(m_renderTarget.ReleaseAndGetAddressOf())));
@@ -428,7 +435,8 @@ void DX::DeviceResources::SetDpi(float dpi)
     {
         m_dpi = dpi;
 
-        // When the display DPI changes, the logical size of the window (measured in Dips) also changes and needs to be updated.
+        // When the display DPI changes, the logical size of the window (measured in Dips) also changes
+        //    and needs to be updated.
         UpdateLogicalSize(m_outputSize, m_dpi);
         m_d2dContext->SetDpi(m_dpi, m_dpi);
         //CreateWindowSizeDependentResources();
@@ -506,7 +514,7 @@ void DX::DeviceResources::HandleDeviceLost()
 }
 
 // Present the contents of the swap chain to the screen.
-void DX::DeviceResources::Present() 
+HRESULT DX::DeviceResources::Present( UINT syncInterval, UINT flags ) 
 {
     // The first argument instructs DXGI to block until VSync, putting the application
     // to sleep until the next VSync. This ensures we don't waste any cycles rendering
@@ -517,10 +525,8 @@ void DX::DeviceResources::Present()
     // However, this flag cannot be used if the app is in fullscreen mode as a
     // result of calling SetFullscreenState.
 //  UINT presentFlags = (m_tearingSupport && m_windowedMode) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    UINT syncInterval = 0;
-    UINT presentFlags = DXGI_PRESENT_ALLOW_TEARING;
-    HRESULT hr = m_swapChain->Present( syncInterval, presentFlags );
-
+    HRESULT hr = m_swapChain->Present( syncInterval, flags );
+ 
     if (m_d3dContext)
     {
         // Discard the contents of the render target.
@@ -551,6 +557,7 @@ void DX::DeviceResources::Present()
         DX::ThrowIfFailed(hr);
     }
 
+    return hr;
 }
 
 // Sets a new swapchain/render target format and recreates all device resources.

@@ -16,6 +16,7 @@
 #include "Sensor.h"
 #include <map>
 
+#include <winrt\base.h>
 #include <winrt\Windows.Devices.Display.h>
 #include <winrt\Windows.Devices.Display.Core.h>
 #include <winrt\Windows.Devices.Enumeration.h>
@@ -173,6 +174,7 @@ public:
 
     // Properties
     void GetDefaultSize(int& width, int& height) const;
+    HANDLE GetFrameLatencyHandle();
 
     // Test pattern control
     void SetTestPattern(TestPattern testPattern);
@@ -190,6 +192,7 @@ public:
     void ResetCurrentStats(void);                     // reset whichever stats are currently in use
     void ReconnectSensor(void);
     void DisconnectSensor(void);
+//  void ReleaseHandle(void) { release m_frameLatencyHandle; }             
 
     void ChangeGradientColor(float deltaR, float deltaG, float deltaB);
     void ChangeBackBufferFormat(DXGI_FORMAT fmt);

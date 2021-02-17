@@ -1,0 +1,2 @@
+C:\Users\charboyd\Source\AdaptiveSyncTest\Debug\AdaptiveSyncCertificationTests.exe
+C:\Users\charboyd\Source\AdaptiveSyncTest\Debug\AdaptiveSyncCertificationTests.pdb

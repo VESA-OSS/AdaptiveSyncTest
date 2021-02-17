@@ -415,9 +415,15 @@ bool Game::isMedia()
     }
 }
 
+HANDLE Game::GetFrameLatencyHandle()
+{
+    return m_deviceResources->GetFrameLatencyHandle();
+}
+
 // Tick method for use with photocell sensor
 void Game::Tick()
 {
+    HRESULT hr = 0;
     double frameTime;                               // local variable for comparison
     double dFrequency = m_qpcFrequency.QuadPart;    // counts per second of QPC
 
@@ -428,6 +434,15 @@ void Game::Tick()
     sc->GetFrameStatistics(&frameStats);
     m_frameLog[1]->syncCounts = frameStats.SyncQPCTime.QuadPart;
     // this is from 2 frames ago since we havent rotated yet
+
+    // also check the media stats that return an approved Present Duration
+    IDXGISwapChainMedia *scMedia;
+    DX::ThrowIfFailed(sc->QueryInterface(IID_PPV_ARGS(&scMedia)));
+    DXGI_FRAME_STATISTICS_MEDIA mediaStats;
+    scMedia->GetFrameStatisticsMedia(&mediaStats);
+
+    if (mediaStats.ApprovedPresentDuration != 0)
+        m_vTotalMode = VTotalMode::Fixed;
 
     // set photon time to be a bit after sync time until we have hardware event
     m_frameLog[0]->photonCounts = m_frameLog[0]->syncCounts + 100000;   // assume 10ms of GtG, etc.
@@ -484,7 +499,7 @@ void Game::Tick()
             m_frameLog[0]->presentCounts = getPerfCounts();
 
             // Show the new frame
-            m_deviceResources->Present();
+            m_deviceResources->Present( 0, DXGI_PRESENT_ALLOW_TEARING );
 
             // if this was a frame that included a flash, then read the photocell's measurement
             if (m_flash)
@@ -547,33 +562,46 @@ void Game::Tick()
             INT64 inputCounts = m_avgInputTime * dFrequency;    
             m_frameLog[0]->clickCounts = m_frameLog[0]->readCounts - inputCounts;
 
-            if (m_mediaPresentDuration)
+            // make sure FrameTime is up to date (should not be a member var)
+            m_targetFrameTime = 1.0 / m_targetFrameRate;
+
+
+            // use PresentDuration mode in some tests
+            UINT closestSmallerDuration = 0, closestLargerDuration = 0;
+            if (m_currentTest == TestPattern::FlickerConstant ||
+                m_currentTest == TestPattern::DisplayLatency ||
+                m_currentTest == TestPattern::FrameLock )
             {
-                // rely on GPU refresh timer to control frame rate
+                m_mediaPresentDuration = 10000000*m_targetFrameTime;
+                hr = scMedia->CheckPresentDurationSupport( m_mediaPresentDuration,
+                        &closestSmallerDuration, &closestLargerDuration );
+
+                hr = scMedia->SetPresentDuration( m_mediaPresentDuration );
+                winrt::check_hresult(hr);
             }
             else
+                m_mediaPresentDuration = 0;
+
+            hr = scMedia->GetFrameStatisticsMedia(&mediaStats);
+            if (mediaStats.ApprovedPresentDuration != 0 && mediaStats.ApprovedPresentDuration == m_mediaPresentDuration)
             {
-#if 0
-                // regulator to adjust delay to produce target frame rate
-                double currentFrameTime = 0.5 * (m_frameTime + m_lastFrameTime);            // average of last two frame times
-                double targetFrameTime = 1.0 / m_targetFrameRate;
-                double deltaFrameTime = (targetFrameTime - currentFrameTime);               // ideal - actual
-                m_sleepDelay += 1000.0 * deltaFrameTime * 0.5;                              // 50% relaxation factor
-#endif
-                // make sure FrameTime is up to date (should not be a member var)
-                m_targetFrameTime = 1.0 / m_targetFrameRate;
+                // we can use the wait model so indicate on UI
+                m_vTotalMode = VTotalMode::Fixed;
+            }
+            else    // use a sleep timer
+            {
                 double avgRunTime;                                                     // how long the app spends not sleeping
                 if (m_frameCount > 1)
-                    avgRunTime = m_totalRunningTime / m_frameCount;   
+                    avgRunTime = m_totalRunningTime / m_frameCount;
                 else
                     avgRunTime = 0.0013;     // aka 1.3ms
 
                 // compute how much of frame time to sleep by subtracting time running CPU/GPU
                 m_sleepDelay = 1000.0 * (m_targetFrameTime - avgRunTime);
-                if (m_sleepDelay <  0.0)                                              // limit to valid range
-                        m_sleepDelay =  0.0;
+                if (m_sleepDelay <  0.0)                                             // limit to valid range
+                    m_sleepDelay =  0.0;
                 if (m_sleepDelay > 50.0)
-                        m_sleepDelay = 50.0;
+                    m_sleepDelay = 50.0;
 
                 // Hopefully set correct duration for this frame by sleeping enough
                 m_frameLog[0]->sleepCounts = getPerfCounts();
@@ -589,10 +617,23 @@ void Game::Tick()
             // Draw()
             Render();                                           // update screen (before we have all values for this frame)
 
+
             // log time when app calls Present()
             m_frameLog[0]->presentCounts = getPerfCounts();
             // Call Present() to show the new frame
-            m_deviceResources->Present();
+            //  UINT presentFlags = (m_tearingSupport && m_windowedMode) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+            UINT syncInterval = 0;
+            UINT presentFlags;
+            HRESULT hr;
+            if (m_mediaPresentDuration != 0)
+            {
+                hr = m_deviceResources->Present(1, DXGI_PRESENT_USE_DURATION);
+            }
+            else
+            {
+//              hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
+                hr = m_deviceResources->Present(0, 0 );
+            }
 
             // log time when vsync happens on display
     //      m_frameLog[0]->syncCounts = presentCounts;          // clear this as we don't know until next frame
@@ -730,11 +771,13 @@ void Game::TickOld()
 void Game::UpdateFlickerConstant()                                                                      //  2
 {
     float maxFrameRate = m_maxFrameRate;
-    if (m_displayFrequency > 20)
-    {
-        if (maxFrameRate > m_displayFrequency)        // clamp to current mode
-            maxFrameRate = m_displayFrequency;
-    }
+    /*
+        if (m_displayFrequency > 20)
+        {
+            if (maxFrameRate > m_displayFrequency)        // clamp to current mode
+                maxFrameRate = m_displayFrequency;
+        }
+    */
 
     // determine what rate to use based on the up/down arrow key setting
     switch (m_flickerRateIndex)
@@ -760,11 +803,13 @@ void Game::UpdateFlickerConstant()                                              
 void Game::UpdateFlickerVariable()
 {
     float maxFrameRate = m_maxFrameRate;
+/*
     if (m_displayFrequency > 20)
     {
         if (maxFrameRate > m_displayFrequency)        // clamp to current mode
             maxFrameRate = m_displayFrequency;
     }
+*/
 
     // vary frame rate based on current pattern
     switch (m_waveEnum)
@@ -1214,6 +1259,7 @@ void Game::ChangeSubtest( INT32 increment)
         break;
 
     case TestPattern::MotionBlur:                                                               // 8
+//      m_MotionBlurIndex += increment;
         if (!increment)                     // make arrow keys run the right way
         {
             m_MotionBlurIndex++;
@@ -1258,6 +1304,11 @@ void Game::UpdateDxgiRefreshRatesInfo()
     m_verticalSyncRate = pDescFS.RefreshRate;       // TODO: this only ever returns 0.
 
 //  m_OSFrameRate = ??
+    // this is from GDI
+    HWND hwnd = ::GetDesktopWindow();
+    HDC hdc = ::GetDC(hwnd);
+    int refresh_rate = ::GetDeviceCaps(hdc, VREFRESH);
+    ::ReleaseDC(hwnd, hdc);
 
     DEVMODE DevNode;
     EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &DevNode );
@@ -1421,8 +1472,8 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.87\n\n";
-    //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
+    text << L"\n\nVersion 0.87f\n\n";
+    text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
     text << L"NUMBER KEY:	Jump to test number\n";
@@ -1570,7 +1621,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
     text << " x " << std::to_wstring(m_outputDesc.BitsPerColor) << L"bits @ ";
     text << m_displayFrequency << L"Hz\n";
 
-    text << "\nAdaptive Display Modes supported at this resolution and bit depth:\n";
+    text << "\nDesktop Display Modes supported at this resolution and bit depth:\n";
 
     // print out the modes in the current mode list that match current resolution:
     for (int iMode = 0; iMode < m_numModes; iMode++)
@@ -1597,21 +1648,21 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
     text << "  Ratio:" << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
 
     // print the video frame rate range supported
-    text << "\nRange of refresh rates for fixed rate media playback:\n";
+    text << "\nRange of refresh rates supported for fixed rate full-screen media playback:\n";
 
-    text << "Min:  " << fixed;
+    text << "  From Min:  " << fixed;
     double minRate = 0.0;
     if (m_maxDuration > 0)
         minRate = 10000000.f / m_maxDuration;
-    text << setw(10) << setprecision(3) << minRate << "Hz  ";
-    text << setw(10) << setprecision(4) << m_maxDuration / 10000.0 << "ms\n";        // scale units from hundreds of nanoseconds to ms
+    text << setw(7) << setprecision(3) << minRate << "Hz ";
+    text << setw(8) << setprecision(4) << m_maxDuration / 10000.0 << "ms\n";    // scale units from hundreds of nanoseconds to ms
 
-    text << "Max:  ";
+    text << "   To  Max:  ";
     double maxRate = 0.0;
     if (m_minDuration > 0)
         maxRate = 10000000.f / m_minDuration;
-    text << setw(10) << setprecision(3) << maxRate << "Hz  ";
-    text << setw(10) << setprecision(4) << m_minDuration/10000.0 << "ms\n";        // scale units from hundreds of nanoseconds to ms
+    text << setw(7) << setprecision(3) << maxRate << "Hz ";
+    text << setw(8) << setprecision(4) << m_minDuration/10000.0 << "ms\n";      // scale units from hundreds of nanoseconds to ms
 
     RenderText(ctx, m_monospaceFormat.Get(), text.str(), m_largeTextRect);
 
@@ -1868,14 +1919,10 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 			title << sRGBval;
 		}
 #endif
-        // if this implementation supports v-total fixed-rate mode, then display current setting
-        if  (m_vTotalFixedSupported )
+        switch (m_vTotalMode)
         {
-            switch (m_vTotalMode)
-            {
-            case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
-            case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
-            }
+        case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
+        case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
         }
 
         title << L"Adjust luminance to 40nits using UI slider or OSD\n";
@@ -2303,8 +2350,10 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 
     // CTS spec says test #5 should run at display max refresh rate
     m_targetFrameRate = m_maxFrameRate;                         // this test should run at max rate
-    if (m_displayFrequency > 20)
+/*
+if (m_displayFrequency > 20)
         m_targetFrameRate = m_displayFrequency;                 // clamp to current mode limit
+*/
 
     // draw test pattern
     float size = sqrt((logSize.right - logSize.left) * (logSize.bottom - logSize.top));
@@ -2761,13 +2810,10 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
         title << "Grid " << nRows << " x " << nCols << "\n";
 
         // if this implementation supports v-total fixed-rate mode, then display current setting
-        if (m_vTotalFixedSupported)
+        switch (m_vTotalMode)
         {
-            switch (m_vTotalMode)
-            {
-            case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
-            case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
-            }
+        case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
+        case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
         }
 
         title << L"Select refresh rate using Up/Down arrows\n";

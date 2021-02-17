@@ -37,7 +37,7 @@ namespace DX
         void SetDpi(float dpi);
         void HandleDeviceLost();
         void RegisterDeviceNotify(IDeviceNotify* deviceNotify) { m_deviceNotify = deviceNotify; }
-        void Present();
+        HRESULT Present( UINT syncInterval, UINT flags );
         void ChangeBackBufferFormat(DXGI_FORMAT fmt);
 		void SetMetadataNeutral();
 
@@ -51,6 +51,7 @@ namespace DX
         ID3D11Device3*          GetD3DDevice() const                    { return m_d3dDevice.Get(); }
         ID3D11DeviceContext3*   GetD3DDeviceContext() const             { return m_d3dContext.Get(); }
         IDXGISwapChain4*        GetSwapChain() const                    { return m_swapChain.Get(); }
+        HANDLE                  GetFrameLatencyHandle() const           { return m_frameLatencyHandle; }
         D3D_FEATURE_LEVEL       GetDeviceFeatureLevel() const           { return m_d3dFeatureLevel; }
         ID3D11Texture2D*        GetRenderTarget() const                 { return m_renderTarget.Get(); }
         ID3D11Texture2D*        GetDepthStencil() const                 { return m_depthStencil.Get(); }
@@ -104,7 +105,9 @@ namespace DX
         Microsoft::WRL::ComPtr<ID3D11Device3>           m_d3dDevice;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext3>    m_d3dContext;
         Microsoft::WRL::ComPtr<IDXGISwapChain4>         m_swapChain;
+        Microsoft::WRL::ComPtr<IDXGISwapChainMedia>     m_mediaSwap;
         Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> m_d3dAnnotation;
+        HANDLE                                          m_frameLatencyHandle;
 
         // Direct3D rendering objects. Required for 3D.
         Microsoft::WRL::ComPtr<ID3D11Texture2D>         m_renderTarget;
