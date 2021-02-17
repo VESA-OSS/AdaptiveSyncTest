@@ -13,6 +13,7 @@
 
 #include "winioctl.h"
 #include "ntddvdeo.h"
+#include "dwmapi.h"
 
 //#include "BasicMath.h"
 #include "ColorSpaces.h"
@@ -91,7 +92,7 @@ void Game::ConstructorInternal()
     m_g2gFrom = true;           // start with "From" color                                          5
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
-    m_g2gInterval = 3;          // default interval for G2G switching                               5
+    m_g2gInterval = 5;          // default interval for G2G switching                               5
 
     m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
@@ -771,13 +772,13 @@ void Game::TickOld()
 void Game::UpdateFlickerConstant()                                                                      //  2
 {
     float maxFrameRate = m_maxFrameRate;
-    /*
-        if (m_displayFrequency > 20)
-        {
-            if (maxFrameRate > m_displayFrequency)        // clamp to current mode
-                maxFrameRate = m_displayFrequency;
-        }
-    */
+/* this is not reliable
+    if (m_displayFrequency > 20)
+    {
+        if (maxFrameRate > m_displayFrequency)        // clamp to current mode
+            maxFrameRate = m_displayFrequency;
+    }
+*/
 
     // determine what rate to use based on the up/down arrow key setting
     switch (m_flickerRateIndex)
@@ -803,14 +804,13 @@ void Game::UpdateFlickerConstant()                                              
 void Game::UpdateFlickerVariable()
 {
     float maxFrameRate = m_maxFrameRate;
-/*
+/* this is not reliable
     if (m_displayFrequency > 20)
     {
         if (maxFrameRate > m_displayFrequency)        // clamp to current mode
             maxFrameRate = m_displayFrequency;
     }
 */
-
     // vary frame rate based on current pattern
     switch (m_waveEnum)
     {
@@ -1259,7 +1259,6 @@ void Game::ChangeSubtest( INT32 increment)
         break;
 
     case TestPattern::MotionBlur:                                                               // 8
-//      m_MotionBlurIndex += increment;
         if (!increment)                     // make arrow keys run the right way
         {
             m_MotionBlurIndex++;
@@ -1301,6 +1300,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
     // TODO: Get the current display refresh rate:
     DXGI_SWAP_CHAIN_FULLSCREEN_DESC pDescFS;
     sc->GetFullscreenDesc( &pDescFS );
+    m_verticalSyncRate = pDescFS.RefreshRate;       // This only ever returns 0 even fullscreen
     m_verticalSyncRate = pDescFS.RefreshRate;       // TODO: this only ever returns 0.
 
 //  m_OSFrameRate = ??
@@ -1310,9 +1310,21 @@ void Game::UpdateDxgiRefreshRatesInfo()
     int refresh_rate = ::GetDeviceCaps(hdc, VREFRESH);
     ::ReleaseDC(hwnd, hdc);
 
+    // Try GDI
     DEVMODE DevNode;
     EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &DevNode );
-    m_displayFrequency = DevNode.dmDisplayFrequency;  // TODO: this only works on the iGPU!
+    m_displayFrequency = DevNode.dmDisplayFrequency;  // This returns 0 on some configs
+
+    // Try DWM:
+    HRESULT hr;
+    DWM_TIMING_INFO DwmInfo;
+    DwmInfo.cbSize = sizeof(DwmInfo);
+    hr = DwmGetCompositionTimingInfo(NULL, &DwmInfo );
+    double dwmRate = DwmInfo.rateRefresh.uiNumerator / DwmInfo.rateRefresh.uiDenominator;
+    // how do I tell which monitor this is?
+
+    DXGI_MODE_DESC dxgiMode;
+    hr = output->FindClosestMatchingMode( NULL, &dxgiMode, NULL );
 
     DXGI_FORMAT format;
     if ( CheckHDR_On() )
@@ -1377,7 +1389,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
     // initialize those scenes that should default to max frame rate
     // TODO: Keep this below actual frame rate of OS!
     m_latencyTestFrameRate = m_maxFrameRate; 
-    m_latencyTestFrameRate = m_displayFrequency;
+    m_latencyTestFrameRate = m_displayFrequency;    // default this to current OS setting
 
 }
 
@@ -1472,6 +1484,8 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
+    text << L"\n\nVersion 0.88\n\n";
+    //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
     text << L"\n\nVersion 0.87f\n\n";
     text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
@@ -1485,7 +1499,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     text << L"ALT-ENTER:	Toggle fullscreen\n";
     text << L"ESCAPE:		Exit fullscreen\n";
     text << L"ALT-F4:		Exit app\n";
-    text << L"\nCopyright © VESA\nLast updated: " << __DATE__;
+    text << L"\nCopyright ? VESA\nLast updated: " << __DATE__;
 
     RenderText(ctx, m_largeFormat.Get(), text.str(), m_largeTextRect);
 
@@ -2350,8 +2364,8 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 
     // CTS spec says test #5 should run at display max refresh rate
     m_targetFrameRate = m_maxFrameRate;                         // this test should run at max rate
-/*
-if (m_displayFrequency > 20)
+/* this is not reliable
+    if (m_displayFrequency > 20)
         m_targetFrameRate = m_displayFrequency;                 // clamp to current mode limit
 */
 

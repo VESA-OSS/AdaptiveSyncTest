@@ -336,9 +336,9 @@ private:
     VTotalMode                  m_vTotalMode;               // set Fixed frame rate vs Adaptive (g-sync)
     bool                        m_paused;                   // whether we are updating data or not
 
-    double                      m_maxFrameRate;             // maximum this output can handle in adaptive mode  1
-    double                      m_minFrameRate;             // minimum this output can handle in adaptive mode
-    double                      m_FrameRateRatio;           // ratio of above 2 parameters
+    double                      m_maxFrameRate;             // maximum mode enumerated on this config (monitor+driver)
+    double                      m_minFrameRate;             // minimum mode enumerated on this config
+    double                      m_FrameRateRatio;           // ratio of above min to max available in adaptive sync
     double                      m_OSFrameRate;              // Advanced Display Settings (upper limit for AdaptSync)
 
     UINT                        m_minDuration;              // min frame time for Fixed V-Total mode
