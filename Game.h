@@ -57,6 +57,41 @@ private:
         GAMUT_ACES   = 5,
     };
 
+/*
+    All the known events:
+    Click        mouse button event
+    Read        App reads event and does any app logic update
+    Draw        App starts drawing
+    Present     When we submit the command to swap the buffers to the wire
+    Flip        When the pixels are first put out the connector
+    Scan        When the pixels are first sent out onto the display
+    Glass       When the pixels are received at the sensor location
+    Photons     When the photons hit the specified threshold
+
+    All the different intervals and their relationships
+    Input time:     from click to App read  estimated 1ms for 1000Hz USB polling
+    App Time:       from read to draw       spent in processing. We call Update() and also a Sleep() to sync with desired rate
+    Render Time:    from draw to present    time spent in app submitting draw calls to driver.
+    Present Time:   from Present call to when flip actually happens as estimated by driver
+    Display Proc:   from when pixels are recieved on the connector to when they are sent to top of screen
+                        Basically any time spent processing or buffering the pixels inside the display
+                        Ideally this is zero as there should not be buffering at all (like a CRT)
+    Scan Time:      How long it takes the 'beam' to sweep from top to bottom' (determined by max frame rate)
+                        We are assuming this is 1/2 of framt time as we measure in screen center like a user's eye would
+    Response Time:  How long it takes for the LCD crystals to twist enough for the photons to get through
+                        Aka Gray-To-Gray response time. Should be affected by overdrive setting
+
+    Definitions:
+    FrameTime is how long until the app code gets back to the same point = frameRate in VRR.
+    Run Time is how long it takes the app to run = frameTime - sleepTime
+    SleepTime is how long we need to sleep to match the desired framerate/time
+
+    Sensor Time is how long between when we poll the sensor and when we see the result
+        = InputTime + PresentTime + DisplayTime;
+    DisplayTime is how long spent in the display
+            = Display Processing + Scan Time + G2G response time;
+*/
+
 // Media rate Flicker test indexes into these arrays using its FlickerRateIndex
 
 #define numMediaRates 11            // number of refresh rates in the media rate test               2, 7
@@ -73,6 +108,7 @@ private:
 #define frameLogLength 11
     typedef struct frameEventStruct {
         UINT64 frameID;			    // frame counter value for this frame
+        UINT64 presentID;           // counter for the number of presents so far
         INT64 clickCounts;	    	// counts when input device button was clicked
         INT64 readCounts;	    	// counts when frame processing starts in app
         INT64 sleepCounts;          // counts when we start the sleep that pads the frame time out
@@ -118,7 +154,7 @@ public:
         ZigZag,
         SquareWave,
         Random,
-        Sine,
+        SineWave,
         Max,
     };
 
@@ -135,9 +171,9 @@ public:
 	enum class TestPattern
 	{
 		StartOfTest,                // Must always be first.
-		ConnectionProperties,       //      Can we set resolution of fullscreen mode here?
-		PanelCharacteristics,       //  1   report limits of frame rate possible at this resolution
-		ResetInstructions,
+		ConnectionProperties,       //  1   Can we set resolution of fullscreen mode here?
+		PanelCharacteristics,       //  D   Report limits of frame rate possible at this resolution
+		ResetInstructions,          //  H   The help screen
         FlickerConstant,            //  2   MinHz, MaxHz, 60Hz, and 24/48Hz
         FlickerVariable,            //  3   Sine wave vs square wave    should use this for frame drop test too
         DisplayLatency,             //  4   Measure e2e lag at 60Hz, 90, 120, 180, 240, 300, 360, 420, 480
@@ -147,7 +183,7 @@ public:
         EndOfMandatoryTests,        // 
         MotionBlur,                 //  8   Demonstrate correct motion blur vs panel exposure time (frameFraction)
         GameJudder,                 //  9   VRR scrolling image to minimize display duration per game needs (BFI)
-        Tearing,                    //      Test pattern to show off tearing artifacts at rates outside the valid range.
+        Tearing,                    //  0   Test pattern to show off tearing artifacts at rates outside the valid range.
         EndOfTest,                  // Must always be last.
         WarmUp,                     //  W
         Cooldown,                   // 'C'   on C hotkey
@@ -209,6 +245,7 @@ private:
     void ConstructorInternal();
     void UpdateDxgiColorimetryInfo();
     void UpdateDxgiRefreshRatesInfo();
+    void LogFrameStats();                                       // query swapchain for stats and log them
 
     void Update();                                              // Overall Update calls the below routines
     void UpdateFlickerConstant();                               // set frame time for fixed rate flicker test       2
@@ -315,6 +352,8 @@ private:
     INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // simulated workload of app in ms
     INT32                       m_frameCount;               // number of frames over which we average
+    INT32                       m_presentCount;             // we may not Present all frames...
+    INT32                       m_frameStatsLag;            // how many frames behind us is the DXGI_Frame_Stats data
     double                      m_frameTime;                // total time since last frame start in seconds
     double                      m_lastFrameTime;            // save from one frame ago
     double                      m_totalFrameTime;           // for average frame time
@@ -325,11 +364,14 @@ private:
     double                      m_totalRenderTime2;         // sum of squares of above for variance
     double                      m_totalPresentTime;         // for average Present time
     double                      m_totalPresentTime2;        // sum of squares of above for variance
+    double                      m_minPresentTime;           // shortest time it took to Present since reset
+    double                      m_maxPresentTime;           // longest  time it took to Present since reset
     double                      m_avgInputTime;             // hard-coded until dongle drives input
 
     double                      m_totalTimeSinceStart;      // not sure if I need this?
     double                      m_testTimeRemainingSec;     // how long current test has been running in seconds
-    uint64_t                    m_frameCounter;             // how many frames rendered in app since start
+    uint64_t                    m_frameCounter;             // how many frames rendered in app since swapchain create
+//  uint64_t                    m_presentCounter;           // how many frames the driver has Presented since swapchain create
     double                      m_targetFrameRate;          // frame rate we want to achieve
     double                      m_targetFrameTime;          // duration of the frame being presented
     bool                        m_vTotalFixedSupported;     // this monitor/GPU supports PresentDuration timings
@@ -379,11 +421,11 @@ private:
     INT32                       m_mediaRateIndex;           // ??
     float                       m_fAngle;                   // angle where moving object is at                  8
     INT32                       m_MotionBlurIndex;          // counter for frame fraction                       8
-//  bool                        m_bMotionBlur;              // whether Motion Blur is on                        8
-    double                      m_judderTestFrameRate;      // for BFI test
+    double                      m_motionBlurFrameRate;      // frame rate in BFI test                           8
+    double                      m_judderTestFrameRate;      // for BFI test                                     9
 
     float                       m_sweepPos;                 // position of bar in tearing test (pixels)         0
-    double                      m_tearingTestFrameRate;     // for tearing check
+    double                      m_tearingTestFrameRate;     // for tearing check                                0
 
     INT32						m_currentProfileTile;
 	UINT32						m_maxPQCode;		        // PQ code of maxLuminance

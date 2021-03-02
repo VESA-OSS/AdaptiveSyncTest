@@ -96,18 +96,21 @@ void Game::ConstructorInternal()
 
     m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
-    m_judderTestFrameRate = 60.;//
-    m_fAngle = 0;               // angle of object moving around screen                             8,9
     m_MotionBlurIndex = maxMotionBlurs;  // start with frame fraction 100%                          8
-    m_tearingTestFrameRate = 60.;  //
+    m_motionBlurFrameRate = 60.;//                                                                  8
+    m_judderTestFrameRate = 60.;//                                                                  9
+    m_fAngle = 0;               // angle of object moving around screen                             8,9
+    m_tearingTestFrameRate = 60.;  //                                                               0
     m_sweepPos = 0;             // position of bar in Tearing test                                  0
 
     m_targetFrameRate = 60.f;
     m_frameTime     = 0.016666;
     m_lastFrameTime = 0.016666;
     m_sleepDelay = 16.0;        // ms simulate workload of app (just used for some tests)
-    m_frameCount = 0;
-    m_frameCounter = 0;         // frames since start of app execution
+    m_frameCount = 0;           // number of frames in current stats
+    m_presentCount = 0;         // number of Presents in current stats
+    m_frameCounter = 0;         // frames rendered since swapchain creation
+//  m_presentCounter = 0;       // frames presented since swapchain creation
     m_totalTimeSinceStart = 0;  // init clock since app start
     m_paused = 0;               // start out unpaused
 
@@ -159,7 +162,19 @@ void Game::RotateFrameLog()
 
     // move last entry to front
     m_frameLog[0] = temp;
-    m_frameLog[0]->frameID = 0;         // clear for use
+
+    // and clear it
+    m_frameLog[0]->frameID = 0;
+    m_frameLog[0]->presentID = 0;
+    m_frameLog[0]->clickCounts;
+    m_frameLog[0]->readCounts;
+    m_frameLog[0]->sleepCounts;
+    m_frameLog[0]->updateCounts;
+    m_frameLog[0]->drawCounts;
+    m_frameLog[0]->presentCounts;
+    m_frameLog[0]->syncCounts;
+    m_frameLog[0]->photonCounts;
+
 }
 
 // Initialize the Direct3D resources required to run.
@@ -221,7 +236,7 @@ void Game::ResetSensorStats()
 
 void Game::ResetFrameStats()
 {
-    m_frameCount = 0;
+    m_frameCount = 0;                   // for stats on frames
 
     m_totalFrameTime  = 0.;             // clear accumulator
     m_totalFrameTime2 = 0.;             // square of above used for variance math
@@ -232,8 +247,11 @@ void Game::ResetFrameStats()
     m_totalRenderTime  = 0.;
     m_totalRenderTime2 = 0.;
 
+    m_presentCount = 0;                 // for stats on Presents
     m_totalPresentTime  = 0.;
     m_totalPresentTime2 = 0.;
+    m_minPresentTime = 1.;
+    m_maxPresentTime = 0.;
 
 }
 
@@ -421,6 +439,26 @@ HANDLE Game::GetFrameLatencyHandle()
     return m_deviceResources->GetFrameLatencyHandle();
 }
 
+void Game::LogFrameStats()
+{
+    // poll frame stats to see if we have newer data
+    auto sc = m_deviceResources->GetSwapChain();
+    DXGI_FRAME_STATISTICS frameStats;
+    sc->GetFrameStatistics(&frameStats);
+
+    // correct for case where framestats are from an older frame relative to current frameCounter
+    m_frameStatsLag = m_frameCounter - frameStats.PresentCount;
+    //  m_frameStatsLag = 2;
+    if (m_frameStatsLag < 0)                                                    // clamp positive
+        m_frameStatsLag = 0;
+    if (m_frameStatsLag >= frameLogLength - 1)                                  // clamp sane
+        m_frameStatsLag = frameLogLength - 1;
+
+    // update the log entry at the corresponding location
+    m_frameLog[m_frameStatsLag]->syncCounts = frameStats.SyncQPCTime.QuadPart;
+    m_frameLog[m_frameStatsLag]->presentID = frameStats.PresentCount;
+}
+
 // Tick method for use with photocell sensor
 void Game::Tick()
 {
@@ -500,7 +538,18 @@ void Game::Tick()
             m_frameLog[0]->presentCounts = getPerfCounts();
 
             // Show the new frame
-            m_deviceResources->Present( 0, DXGI_PRESENT_ALLOW_TEARING );
+            UINT syncInterval = 0;
+            UINT presentFlags;
+            HRESULT hr;
+            if (m_mediaPresentDuration != 0)
+            {
+                hr = m_deviceResources->Present(1, DXGI_PRESENT_USE_DURATION);
+            }
+            else
+            {
+//              hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
+                hr = m_deviceResources->Present(0, 0);
+            }
 
             // if this was a frame that included a flash, then read the photocell's measurement
             if (m_flash)
@@ -863,7 +912,7 @@ void Game::UpdateFlickerVariable()
         }
         break;
 
-        case WaveEnum::Sine:
+        case WaveEnum::SineWave:
         {
             double amplitude = 0.5 * (maxFrameRate - m_minFrameRate);
             double baseline = 0.5 * (maxFrameRate + m_minFrameRate);
@@ -930,19 +979,20 @@ void Game::UpdateGrayToGray()
             }
             else  // we were on the To color
             {
-                m_g2gFromIndex++;
-                if (m_g2gFromIndex > numGtGValues - 1)
+                m_g2gToIndex++;                             // varies fastest
+                if (m_g2gToIndex > numGtGValues - 1)
                 {
-                    m_g2gFromIndex = 0;
+                    m_g2gToIndex = 0;
 
-                    m_g2gToIndex++;
-                    if (m_g2gToIndex > numGtGValues - 1)
-                        m_g2gToIndex = 0;
+                    m_g2gFromIndex++;
+                    if (m_g2gFromIndex > numGtGValues - 1)
+                        m_g2gFromIndex = 0;
                 }
                 m_g2gFrom = true;
             }
-            if ( m_g2gFromIndex != m_g2gToIndex )       // skip the diagonal where to and from are same
-                m_testTimeRemainingSec = 0.250f;         //  quarter second
+            if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))       // skip the diagonal where to and from are same
+                m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;        // quarter second
+
         }
     }
     else      // we are in manual state setting mode (not auto sequence)
@@ -1005,11 +1055,11 @@ void Game::Update()
 {
     switch (m_currentTest)
     {
-    case TestPattern::ConnectionProperties:                                                     //
+    case TestPattern::ConnectionProperties:                                                     // 1
         UpdateDxgiRefreshRatesInfo();
         break;
 
-    case TestPattern::PanelCharacteristics:                                                     // 1
+    case TestPattern::PanelCharacteristics:                                                     //
 //		UpdateDxgiColorimetryInfo();
 		break;
 
@@ -1101,26 +1151,29 @@ void Game::Update()
 }
 
 // Keep value in range from min to max by clamping
-float clamp(float v, float min, float max)		// inclusive
+float clamp(float x, float min, float max)		// inclusive
 {
-    if (v > max)
-        v = max; else
-        if (v < min)
-            v = min;
-    return v;
+    if (x > max)
+        return max;
+    if (x < min)
+        return min;
+    return x;
 }
 
 // Keep value in from min to max by wrapping
-float wrap(float v, float min, float max)			// inclusive
+int wrap(int x, int min, int max)			// inclusive
 {
-    float range = max - min + 1.f;
-    while (v >= max)
-        v -= range;
-    while (v < min)
-        v += range;
-    return v;
+    if (max < min)
+        return 0;
+    int range = max - min + 1;
+    x = (x - min) % range;
+    if (x < 0)
+        return max + 1 + x;
+    else
+        return min + x;
 }
 
+// routines to handle the 'from' and 'to' colors (currently on </> keys)
 void Game::ChangeG2GFromIndex( INT32 increment)
 {
     m_g2gFromIndex += increment;
@@ -1133,24 +1186,37 @@ void Game::ChangeG2GToIndex( INT32 increment)
     m_g2gToIndex = wrap(m_g2gToIndex, 0, numGtGValues-1 );
 }
 
+// routines to handle the g2g frame skip factor and motionblur level (currently on +/- keys)
 void Game::ChangeG2GInterval(INT32 increment)
 {
-    m_g2gInterval += increment;
-    m_g2gInterval = clamp(m_g2gInterval, 1, 10);
+    switch (m_currentTest)
+    {
+    case TestPattern::GrayToGray:
+        m_g2gInterval += increment;
+        m_g2gInterval = clamp(m_g2gInterval, 1, 60);
+        break;
+
+    case TestPattern::MotionBlur:
+        m_MotionBlurIndex += increment;
+        if (m_MotionBlurIndex > maxMotionBlurs + 3)
+            m_MotionBlurIndex = 0;
+        if (m_MotionBlurIndex < 0)
+            m_MotionBlurIndex = maxMotionBlurs + 3;
+        break;
+    }
 }
 
+// accessor for UI routine in main.cpp
 void Game::SetShift(bool shift)
 {
     m_shiftKey = shift;
 }
 
-// handle the up/down arrow key inputs
+// handle the up/down arrow key inputs (different for each test pattern)
 void Game::ChangeSubtest( INT32 increment)
 {
-    if (m_shiftKey)
-        increment *= 10;
+    int testInt, testTier;
 
-    int testTier;
     switch (m_currentTest)
     {
     case TestPattern::PanelCharacteristics:
@@ -1166,35 +1232,15 @@ void Game::ChangeSubtest( INT32 increment)
         break;
 
     case TestPattern::FlickerVariable:                                                          // 3
-        if (increment)
-        {
-            if (m_waveEnum == WaveEnum::Max)        // if at last one, then
-            {
-                m_waveEnum = WaveEnum::ZigZag;      // wrap to the first
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) + 1;
-                m_waveEnum = static_cast<WaveEnum>(testInt);
-            }
-        }
-        else
-        {
-            if (m_waveEnum == WaveEnum::ZigZag )    // if at first one, then
-            {
-                m_waveEnum = WaveEnum::Max;       // wrap to the last
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_waveEnum) - 1;
-                m_waveEnum = static_cast<WaveEnum>(testInt);
-            }
-        }
+        testInt = (int)m_waveEnum;
+        testInt += increment;
+        testInt = wrap(testInt, (int)WaveEnum::ZigZag, (int)WaveEnum::Max);
+        m_waveEnum = static_cast<WaveEnum>(testInt);
         ResetFrameStats();
         break;
 
     case TestPattern::DisplayLatency:                                                           // 4
-    {
+        if (m_shiftKey) increment *= 10;
         if (m_sensing)
         {
             // adjust the sensor detection level
@@ -1208,80 +1254,43 @@ void Game::ChangeSubtest( INT32 increment)
             m_latencyTestFrameRate = clamp( m_latencyTestFrameRate, 20., 1000. );
         }
         break;
-    }
 
     case TestPattern::GrayToGray:                                                               // 5
         ChangeG2GToIndex(increment);
         break;
 
     case TestPattern::FrameDrop:                                                                // 6
-        if (increment)
-        {
-            if (m_frameDropRateEnum == DropRateEnum::p72fps)         // if at the last
-            {
-                m_frameDropRateEnum = DropRateEnum::Max;            // wrap to the first
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_frameDropRateEnum) + 1;
-                m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
-            }
-        }
-        else
-        {
-            if (m_frameDropRateEnum == DropRateEnum::Max)           // if at the first
-            {
-                m_frameDropRateEnum = DropRateEnum::p72fps;          // wrap to the last
-            }
-            else
-            {
-                unsigned int testInt = static_cast<unsigned int>(m_frameDropRateEnum) - 1;
-                m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
-            }
-        }
+        testInt = (int)m_frameDropRateEnum;
+        testInt += increment;
+        testInt = wrap(testInt, (int)DropRateEnum::Max, (int)DropRateEnum::p72fps);
+        m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
+        ResetFrameStats();
         break;
 
     case TestPattern::FrameLock:        // use media frame rates here                           // 7
-        if (increment)
-        {
-            m_frameLockRateIndex++;
-            if (m_frameLockRateIndex > numMediaRates-1)
-                m_frameLockRateIndex = 0;
-        }
-        else
-        {
-            m_frameLockRateIndex--;
-            if (m_frameLockRateIndex < 0)
-                m_frameLockRateIndex = numMediaRates-1;
-        }
+        m_frameLockRateIndex += increment;
+        if (m_frameLockRateIndex > numMediaRates - 1)
+            m_frameLockRateIndex = 0;
+        if (m_frameLockRateIndex < 0)
+            m_frameLockRateIndex = numMediaRates - 1;
         m_frameLockRateIndex = m_frameLockRateIndex % numMediaRates;
         ResetFrameStats();
         break;
 
     case TestPattern::MotionBlur:                                                               // 8
-        if (!increment)                     // make arrow keys run the right way
-        {
-            m_MotionBlurIndex++;
-            if (m_MotionBlurIndex > maxMotionBlurs+3)
-                m_MotionBlurIndex = 0;
-        }
-        else
-        {
-            m_MotionBlurIndex--;
-            if (m_MotionBlurIndex < 0)
-                m_MotionBlurIndex = maxMotionBlurs+3;
-        }
-//      m_MotionBlurIndex = m_MotionBlurIndex % maxMotionBlurs;
+        if (m_shiftKey) increment *= 10;
+        m_motionBlurFrameRate += increment;
+        m_motionBlurFrameRate = clamp(m_motionBlurFrameRate, 20, 1000);
         break;
 
     case TestPattern::GameJudder:                                                               // 9
-    {
+        if (m_shiftKey) increment *= 10;
         m_judderTestFrameRate += increment;
         m_judderTestFrameRate = clamp(m_judderTestFrameRate, 20, 1000);
         break;
-    }
 
     case TestPattern::Tearing:                                                                  // 0
+        if (m_shiftKey) increment *= 10;
         m_tearingTestFrameRate += increment;
         m_tearingTestFrameRate = clamp(m_tearingTestFrameRate, 20, 1000);
         break;
@@ -1315,13 +1324,15 @@ void Game::UpdateDxgiRefreshRatesInfo()
     EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &DevNode );
     m_displayFrequency = DevNode.dmDisplayFrequency;  // This returns 0 on some configs
 
-    // Try DWM:
     HRESULT hr;
+#if 0
+    // Try DWM:
     DWM_TIMING_INFO DwmInfo;
     DwmInfo.cbSize = sizeof(DwmInfo);
     hr = DwmGetCompositionTimingInfo(NULL, &DwmInfo );
     double dwmRate = DwmInfo.rateRefresh.uiNumerator / DwmInfo.rateRefresh.uiDenominator;
     // how do I tell which monitor this is?
+#endif
 
     DXGI_MODE_DESC dxgiMode;
     hr = output->FindClosestMatchingMode( NULL, &dxgiMode, NULL );
@@ -1484,11 +1495,9 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"\n\nVersion 0.88\n\n";
-    //text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
-    text << L"\n\nVersion 0.87f\n\n";
+    text << L"  - Version 0.90\n\n";
     text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
-	text << L"->, PAGE DN:       Move to next test\n";
+    text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
     text << L"NUMBER KEY:	Jump to test number\n";
     text << L"SPACE:		Hide text and target circle\n";
@@ -1499,7 +1508,7 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     text << L"ALT-ENTER:	Toggle fullscreen\n";
     text << L"ESCAPE:		Exit fullscreen\n";
     text << L"ALT-F4:		Exit app\n";
-    text << L"\nCopyright ? VESA\nLast updated: " << __DATE__;
+    text << L"\nCopyright (C) VESA\nLast updated: " << __DATE__;
 
     RenderText(ctx, m_largeFormat.Get(), text.str(), m_largeTextRect);
 
@@ -1534,7 +1543,7 @@ bool Game::CheckHDR_On()
 	return HDR_On;
 }
 
-void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)                           // No hotkey
+void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)                           // 1
 {
     std::wstringstream text;
 
@@ -1689,7 +1698,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)   
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)           //         1
+void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)           //         D
 {
     std::wstringstream text;
 	text << fixed << setw(9) << setprecision(2);
@@ -1896,8 +1905,8 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 
         switch (m_flickerRateIndex)
         {
-        case 0: title << " Min";   break;
-        case 1: title << " Max";   break;
+        case 0: title << " Minimum";   break;
+        case 1: title << " Maximum";   break;
         default:     break;
         }
         if (m_targetFrameRate < (m_minFrameRate-0.1) )
@@ -1990,11 +1999,11 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         case WaveEnum::Random:
             title << L"-Random\n";
             break;
-        case WaveEnum::Sine:
+        case WaveEnum::SineWave:
             title << L"-Sine Wave\n";
             break;
         case WaveEnum::Max:
-            title << L"-Max\n";
+            title << L"-Maximum\n";
             break;
         default:
             title << L"  E R R O R ! \n";
@@ -2185,7 +2194,21 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             }
             // show number of frames average is over
             title << setw(8) << m_frameCount;
+            title << setw(8) << m_presentCount;
 //          title << "Average of " << m_frameCount << " frames: " << fixed << setprecision(3);
+
+            // Display present id counter from DXGI_FRAME_STATISTICS
+            title << "\nPresentID: ";
+            for (int i = numCols - 1; i >= 2; i--)
+            {
+                title << setw(8) << m_frameLog[i]->presentID;
+            }
+
+            title << "\nLog Index: ";
+            for (int i = numCols - 1; i >= 0; i--)
+            {
+                title << setw(8) << i;
+            }
 
             // Print entire loop end-to-end intervals
             title << "\nFrame Time:" << setprecision(3);
@@ -2236,6 +2259,9 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
             title << setprecision(3) << setw(8) << avgRenderTime * 1000.f;
             title << setprecision(3) << setw(8) << varRenderTime * 1000.f;
 
+            // print how far out of sync the frame stats are vs our current frame counter
+            title << setprecision(0) << setw(5) << m_frameStatsLag;
+
             // Print time to finalize image and flip -time from Present() to Vsync
             title << "\nPresent:   " << setprecision(3);
             for (int i = numCols - 1; i >= 2; i--)
@@ -2244,11 +2270,14 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
                 title << setw(8) << time * 1000.0f;
             }
             title << "                ";
-            double avgPresentTime = m_totalPresentTime / m_frameCount;
+            double avgPresentTime = m_totalPresentTime / m_frameCount;      // TODO: PresentCount Here?
             double varPresentTime = sqrt(m_frameCount*m_totalPresentTime2 - m_totalPresentTime*m_totalPresentTime )/m_frameCount;
             title << setprecision(3) << setw(8) << avgPresentTime * 1000.f;
             title << setprecision(3) << setw(8) << varPresentTime * 1000.f;
 
+            // print range
+            title << setprecision(3) << setw(8) << m_minPresentTime * 1000.f;
+            title << setprecision(3) << setw(8) << m_maxPresentTime * 1000.f;
 
          // TODO REMOVE THIS HACK FOR TESTING to simulate a more consistent value from the presentStats API
  //         avgPresentTime = avgFrameTime / 2.0;
@@ -2631,7 +2660,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         switch (m_frameDropRateEnum)
         {
         case DropRateEnum::Max:
-            title << L"-Max\n";
+            title << L"-Maximum\n";
             break;
         case DropRateEnum::Random:
             title << L"-Random\n";
@@ -2853,7 +2882,7 @@ void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
 void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)                 // ********************** 8.
 {
     float refreshRate = 60.0f;      // simulate 60Hz video on Netflix or Youtube
-    m_targetFrameRate = refreshRate;
+    m_targetFrameRate = m_motionBlurFrameRate;
 
     // get window dimensions in pixels
     auto logSize = m_deviceResources->GetLogicalSize();
@@ -2923,7 +2952,8 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
 
         title << "Frame Fraction: ";
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
-        title << L"\nSelect Frame Fraction using Up/Down arrows\n";
+        title << L"\nSelect frame rate using Up/Down arrows\n";
+        title << L"Select Frame Fraction using +/- keys\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -2938,8 +2968,8 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)             
     float nits = 100;
 
     bool bBFI = true;
-    if (m_frameTime > 0.025 ||         // will flicker if too slow at under 50ms (40Hz)
-        m_frameTime < 0.01666666)      // no time for a frame to fit if too fast (>1/2 refresh rate)
+    if (m_frameTime > 0.025 ||                  // will flicker if too slow at under 50ms (40Hz)
+        m_frameTime < 2.0 / m_maxFrameRate)     // no time for a frame to fit if too fast (>1/2 refresh rate)
     {
         bBFI = false;
     }
@@ -3069,7 +3099,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
         title << "Grid " << nCols;
 
-        title << L"\nSelect frame duration using Up/Down arrows\n";
+        title << L"\nSelect frame rate using Up/Down arrows\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3191,13 +3221,13 @@ void Game::Render()
     case TestPattern::StartOfTest:
         GenerateTestPattern_StartOfTest(ctx);
         break;
-    case TestPattern::ConnectionProperties:
+    case TestPattern::ConnectionProperties:                             // 1
         GenerateTestPattern_ConnectionProperties(ctx);
         break;
-    case TestPattern::PanelCharacteristics:								// 1
+    case TestPattern::PanelCharacteristics:								// D
         GenerateTestPattern_PanelCharacteristics(ctx);
         break;
-    case TestPattern::ResetInstructions:
+    case TestPattern::ResetInstructions:                                // H
         GenerateTestPattern_ResetInstructions(ctx);
         break;
     case TestPattern::FlickerConstant:									// 2

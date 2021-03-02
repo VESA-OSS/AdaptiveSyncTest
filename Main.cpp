@@ -401,6 +401,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case 0x53:                                                        // 'S'
             game->ToggleSensing();
             break;
+        case 0x48:                                                        // 'H'
+            game->SetTestPattern(Game::TestPattern::ResetInstructions);
+            break;
         case 0x70:                                                        // F1
             game->ReconnectSensor();
             break;
@@ -412,6 +415,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             game->TogglePause();
             break;
         case 0x31:                                                        // '1'
+            game->SetTestPattern(Game::TestPattern::ConnectionProperties);
+            break;
+        case 0x44:                                                        // 'D'
             game->SetTestPattern(Game::TestPattern::PanelCharacteristics);
             break;
         case 0x32:                                                        // '2'
