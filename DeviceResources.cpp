@@ -52,9 +52,10 @@ DX::DeviceResources::DeviceResources(
     m_backBufferCount(backBufferCount),
     m_window(0),
     m_d3dFeatureLevel(D3D_FEATURE_LEVEL_9_1),
-    m_outputSize{0, 0, 1, 1},
+    m_outputSize{ 0, 0, 1, 1 },
     m_deviceNotify(nullptr),
-    m_dpi(-1.0f) // Require DPI to be explicitly set.
+    m_dpi(-1.0f), // Require DPI to be explicitly set.
+    m_vTotalMode(false)
 {
     CreateDeviceIndependentResources();
 }
@@ -260,17 +261,26 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
     UINT backBufferWidth = std::max<UINT>(m_outputSize.right - m_outputSize.left, 1);
     UINT backBufferHeight = std::max<UINT>(m_outputSize.bottom - m_outputSize.top, 1);
 
+    UINT swapFlags = 0;     // Present Flags for swapchain resize call
     if (m_swapChain)
     {
+        if ( m_vTotalMode )     // if user is requesting V-TotalAverage to be FIXED
+        {
+            swapFlags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+        }
+        else
+        {
+            swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
+//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+        }
         // If the swap chain already exists, resize it.
         HRESULT hr = m_swapChain->ResizeBuffers(
             m_backBufferCount,
             backBufferWidth,
             backBufferHeight,
             m_backBufferFormat,
-//          DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING 
-            DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
-            );
+            swapFlags
+        );
 
         if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
         {
@@ -321,12 +331,20 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         swapChainDesc.SampleDesc.Count = 1;
         swapChainDesc.SampleDesc.Quality = 0;
         swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-//      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+//      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-        swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-//      swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
-        swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+        if (m_vTotalMode)     // if user is requesting V-TotalAverage to be FIXED
+        {
+            swapFlags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+        }
+        else
+        {
+            swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
+//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+        }
+        swapChainDesc.Flags = swapFlags;
+ 
         // Create a SwapChain from a Win32 window.
         ComPtr<IDXGISwapChain1> swapChain1;
         DX::ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
@@ -344,11 +362,14 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         DX::ThrowIfFailed(dxgiFactory->MakeWindowAssociation(m_window, DXGI_MWA_NO_ALT_ENTER));
     }
 
-    // swapchain is now created or resized
-    m_swapChain->SetMaximumFrameLatency(1);     // only valid in PresentDuration mode
+    if (m_vTotalMode)     // if user is requesting V-TotalAverage to be FIXED
+    {
+        // swapchain is now created or resized
+        m_swapChain->SetMaximumFrameLatency(1);     // only valid in PresentDuration mode
 
-    // need to update latency handle when it changes like on swapchain create or resize.
-    m_frameLatencyHandle = m_swapChain->GetFrameLatencyWaitableObject();
+        // need to update latency handle when it changes like on swapchain create or resize.
+        m_frameLatencyHandle = m_swapChain->GetFrameLatencyWaitableObject();
+    }
 
     // Create a render target view of the swap chain back buffer.
     DX::ThrowIfFailed(m_swapChain->GetBuffer(0, IID_PPV_ARGS(m_renderTarget.ReleaseAndGetAddressOf())));

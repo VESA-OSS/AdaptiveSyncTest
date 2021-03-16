@@ -9,6 +9,8 @@
 // 
 //*********************************************************
 
+#define versionString L"v0.91 "
+
 #include "pch.h"
 
 #include "winioctl.h"
@@ -58,9 +60,10 @@ void Game::ConstructorInternal()
     m_mediaPresentDuration = 0; // Duration when using SwapChainMedia for hardware syncs.
                                 // Units are in 0.1us or 100ns intervals.  Zero 0 = off.
     m_vTotalFixedSupported = false;         // assume we don't support fixed V-Total mode
-    m_vTotalMode = VTotalMode::Adaptive;    // so we are in Adaptive mode
+    m_vTotalModeRequested = VTotalMode::Adaptive;    // default to stay Adaptive mode
+    m_vTotalFixedApproved = false;          // default to assuming it's not working
 
-    m_minFrameRate =  24;       // fps      these will be overridden by the detection logic.
+    m_minFrameRate =  10;       // fps      these will be overridden by the detection logic.
     m_maxFrameRate = 120;
     m_minDuration = 0;          // min frame time for Fixed V-Total mode -default to 0 for adaptive only
     m_maxDuration = 0;          // max frame time for Fixed V-Total mode -default to 0 for adaptive only
@@ -92,7 +95,8 @@ void Game::ConstructorInternal()
     m_g2gFrom = true;           // start with "From" color                                          5
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
-    m_g2gInterval = 5;          // default interval for G2G switching                               5
+    m_g2gCounter = 0;           // counter for interval of gray periods                             5
+    m_g2gInterval = 15;         // default interval for G2G switching                               5
 
     m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
@@ -191,12 +195,26 @@ void Game::Initialize(HWND window, int width, int height)
 
 }
 
+enum Game::VTotalMode Game::GetVTotalMode()
+{
+    return m_vTotalModeRequested;
+}
+
+// for UI to request a VTotal mode
 void Game::ToggleVTotalMode()
 {
-    if (m_vTotalMode == VTotalMode::Adaptive)
-        m_vTotalMode = VTotalMode::Fixed;
+    if (m_vTotalModeRequested == VTotalMode::Adaptive)
+    {
+        m_vTotalModeRequested = VTotalMode::Fixed;
+        // tell deviceResources object so it can handle next swapchain resize properly  TODO it probably has to be recreated...
+        m_deviceResources->SetVTotalMode( true );
+    }
     else
-        m_vTotalMode = VTotalMode::Adaptive;
+    {
+        m_vTotalModeRequested = VTotalMode::Adaptive;
+        // tell deviceResources object so it can handle next swapchain resize properly  TODO it probably has to be recreated...
+        m_deviceResources->SetVTotalMode( false );
+    }
 }
 
 void Game::TogglePause()
@@ -474,6 +492,18 @@ void Game::Tick()
     m_frameLog[1]->syncCounts = frameStats.SyncQPCTime.QuadPart;
     // this is from 2 frames ago since we havent rotated yet
 
+    // Compute a refresh rate for the actual monitor v-syncs
+    INT64 monCounts = getPerfCounts();                                          // get current time in QPC counts
+    double monDeltaT = (monCounts - m_lastMonCounts) / dFrequency;              // see how long it's been
+    if (monDeltaT > 0.25)                                                       // if it's been over 1/4 second
+    {
+        uint monSyncs = frameStats.SyncRefreshCount;                            // get count of refreshes
+        uint monSyncDelta = monSyncs - m_lastMonSyncs;                          // how many syncs since last time
+        m_monitorSyncRate = (float) monSyncDelta / monDeltaT;                   // compute sync rate of panel
+        m_lastMonCounts = monCounts;                                            // save state for next time
+        m_lastMonSyncs = monSyncs;
+    }
+
     // also check the media stats that return an approved Present Duration
     IDXGISwapChainMedia *scMedia;
     DX::ThrowIfFailed(sc->QueryInterface(IID_PPV_ARGS(&scMedia)));
@@ -481,7 +511,7 @@ void Game::Tick()
     scMedia->GetFrameStatisticsMedia(&mediaStats);
 
     if (mediaStats.ApprovedPresentDuration != 0)
-        m_vTotalMode = VTotalMode::Fixed;
+        m_vTotalFixedApproved = true;
 
     // set photon time to be a bit after sync time until we have hardware event
     m_frameLog[0]->photonCounts = m_frameLog[0]->syncCounts + 100000;   // assume 10ms of GtG, etc.
@@ -636,7 +666,7 @@ void Game::Tick()
             if (mediaStats.ApprovedPresentDuration != 0 && mediaStats.ApprovedPresentDuration == m_mediaPresentDuration)
             {
                 // we can use the wait model so indicate on UI
-                m_vTotalMode = VTotalMode::Fixed;
+                m_vTotalFixedApproved = true;
             }
             else    // use a sleep timer
             {
@@ -681,8 +711,8 @@ void Game::Tick()
             }
             else
             {
-//              hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
-                hr = m_deviceResources->Present(0, 0 );
+                hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
+//              hr = m_deviceResources->Present(0, 0 );
             }
 
             // log time when vsync happens on display
@@ -960,18 +990,18 @@ float Game::GrayToGrayValue(INT32 index)
 // update routine for Gray2Gray Test pattern                                                               5
 void Game::UpdateGrayToGray()
 {
-    if ( m_autoG2G )      // if we are in auto-sequence
+    if (m_autoG2G)      // if we are in auto-sequence
     {
-/*
-        update the timer
-        if it has run down, then
-            Toggle the m_from boolean
-            If we are back at true, then
-            Increment the FromIndex
-                if that overflows, increment the ToIndex
-*/
-        m_testTimeRemainingSec -= m_frameTime;
-        if (m_testTimeRemainingSec < 0.f)           // timer has run out, so change something
+        /*
+                update the timer
+                if it has run down, then
+                    Toggle the m_from boolean
+                    If we are back at true, then
+                    Increment the FromIndex
+                        if that overflows, increment the ToIndex
+        */
+        //      m_testTimeRemainingSec -= m_frameTime;
+        if (m_g2gCounter <= 0)                         // counter ran down, so change something
         {
             if (m_g2gFrom)
             {
@@ -991,27 +1021,55 @@ void Game::UpdateGrayToGray()
                 m_g2gFrom = true;
             }
             if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))       // skip the diagonal where to and from are same
-                m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;        // quarter second
+                m_g2gCounter = m_g2gInterval;
+            //              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;        // quarter second
 
         }
     }
     else      // we are in manual state setting mode (not auto sequence)
     {
-//      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
-//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
-//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
-//      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
-//      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
+        //      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
+        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
+        //      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
+        //      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
 
-        if ((m_frameCounter % m_g2gInterval) == 0)
-            m_g2gFrom = !m_g2gFrom;
+        if (m_g2gCounter <= 0)
+        {
+            m_g2gFrom = !m_g2gFrom;                         // flip to showing the 2 color
+            m_g2gCounter = m_g2gInterval;                   // reset the interval timer
+        }
     }
 
-    // compute color for test patch
+    // define color for test patch
     if (m_g2gFrom)
         m_color = GrayToGrayValue(m_g2gFromIndex);
     else
         m_color = GrayToGrayValue(m_g2gToIndex);
+
+    // set frame duration accordingly
+    m_targetFrameRate = m_maxFrameRate;
+
+    // skip some frames during test#5 to keep panels from tuning overdrive to a fixed rate
+    if (m_currentTest == TestPattern::GrayToGray)
+    {
+        //TODO delete this test code!!
+        //  m_targetFrameRate = 59.97;
+        if (((float)rand() / RAND_MAX) > 0.50)                     // about half the time,
+        {
+            if (m_g2gCounter > 1)                                  // if there is room  left (2 intervals remaining: 1 and 0 )
+            {
+                m_targetFrameRate = m_targetFrameRate / 2.0;                // insert a double-length frame.
+                m_g2gCounter--;                                             // do extra decrement to stay in sync
+            }
+        }
+    }
+    
+    m_targetFrameTime = 1.0 / m_targetFrameRate;
+
+    // run the timer
+    m_g2gCounter--;
+
 }
 
 // update routine for Frame Drop test                                                                        6
@@ -1309,8 +1367,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
     // TODO: Get the current display refresh rate:
     DXGI_SWAP_CHAIN_FULLSCREEN_DESC pDescFS;
     sc->GetFullscreenDesc( &pDescFS );
-    m_verticalSyncRate = pDescFS.RefreshRate;       // This only ever returns 0 even fullscreen
-    m_verticalSyncRate = pDescFS.RefreshRate;       // TODO: this only ever returns 0.
+    m_verticalSyncRate = pDescFS.RefreshRate;       // TODO: this only ever returns 0 even fullscreen.
 
 //  m_OSFrameRate = ??
     // this is from GDI
@@ -1335,7 +1392,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
 #endif
 
     DXGI_MODE_DESC dxgiMode;
-    hr = output->FindClosestMatchingMode( NULL, &dxgiMode, NULL );
+//  hr = output->FindClosestMatchingMode( NULL, &dxgiMode, NULL );
 
     DXGI_FORMAT format;
     if ( CheckHDR_On() )
@@ -1495,7 +1552,8 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
     std::wstringstream text;
 
     text << m_appTitle;
-    text << L"  - Version 0.90\n\n";
+    text << L" - " << versionString;
+    text << L"\n\n";
     text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
     text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
@@ -1872,7 +1930,7 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 
 // Flicker test -fixed frame rates:
 // Just draws the screen at about 10nits luminance in either HDR or SDR mode
-void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			        	// 2
+void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			        	    // 2
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -1901,7 +1959,8 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 	if ( m_showExplanatoryText )
 	{
 		std::wstringstream title;
-        title << L"2 Flicker at Constant Refresh Rate: ";
+        title << versionString;
+        title << L" Test 2 - Flicker at Constant Refresh Rate: ";
 
         switch (m_flickerRateIndex)
         {
@@ -1924,6 +1983,10 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+
+
 #if 0
         // display brightness level for this test
         title << setprecision(0);
@@ -1942,11 +2005,21 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 			title << sRGBval;
 		}
 #endif
-        switch (m_vTotalMode)
+
+        // display V-Total mode if requested
+        if (m_vTotalModeRequested == VTotalMode::Fixed)
         {
-        case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
-        case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
+            if (m_vTotalFixedApproved)
+            {
+                title << "V-Total: Fixed\n";
+            }
+            else
+            {
+                title << "V-Total: Adaptive\n";
+            }
         }
+        else
+            title << L"\n";
 
         title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select refresh rate using Up/Down arrows\n";
@@ -1959,7 +2032,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 
 }
 
-void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
+void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				                // 3
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -1987,7 +2060,8 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
     if (m_showExplanatoryText)
 	{
 		std::wstringstream title;
-		title << L"3 Flicker at Varying Refresh Rate: ";
+        title << versionString;
+		title << L" Test 3 - Flicker at Varying Refresh Rate: ";
         switch (m_waveEnum)
         {
         case WaveEnum::ZigZag:
@@ -2021,6 +2095,10 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				// 3
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+
 
 #if 0
         // display brightness level for this test
@@ -2125,8 +2203,8 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
-
-        title << L"4 Display Latency Measurement:  ";
+        title << versionString;
+        title << L" Test 4 - Display Latency Measurement:  ";
 
         if ( m_sensing )
         {
@@ -2391,13 +2469,6 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
     ComPtr<ID2D1SolidColorBrush> testBrush;                     // 10% area test square
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &testBrush));
 
-    // CTS spec says test #5 should run at display max refresh rate
-    m_targetFrameRate = m_maxFrameRate;                         // this test should run at max rate
-/* this is not reliable
-    if (m_displayFrequency > 20)
-        m_targetFrameRate = m_displayFrequency;                 // clamp to current mode limit
-*/
-
     // draw test pattern
     float size = sqrt((logSize.right - logSize.left) * (logSize.bottom - logSize.top));
     size = size * sqrtf(0.10);              // dimension of a square of 10% screen area
@@ -2417,10 +2488,16 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
 	if (m_showExplanatoryText)
 	{
 		std::wstringstream title;
-		title << L"5 Gray To Gray:    ";
-        title << L"Switching every " << m_g2gInterval << " frames.\n";
-        title << fixed;
-        title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << versionString;
+		title << L" Test 5 - Gray To Gray: ";
+        title << L"Switching every " << m_g2gInterval << " frames. ";
+        if (m_g2gFrom)
+            title << L"From    ";
+        else
+            title << L"     To ";
+        title << fixed << setw(m_g2gCounter+1) << m_g2gCounter;
+
+        title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
@@ -2430,6 +2507,9 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
         if ( m_autoG2G )
         { 
@@ -2656,7 +2736,8 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
-        title << L"6 Frame Drop Test:  ";
+        title << versionString;
+        title << L" Test 6 - Frame Drop Test:  ";
         switch (m_frameDropRateEnum)
         {
         case DropRateEnum::Max:
@@ -2687,11 +2768,16 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
         double avgFrameTime = m_totalFrameTime / m_frameCount;
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+
         title << "Grid " << nRows << " x " << nCols;
         title << L"\nSelect refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
@@ -2839,25 +2925,39 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
 		float2 center = float2(logSize.right*0.5f, logSize.bottom*0.5f);
 
 		std::wstringstream title;
-		title << L"7 Framerate Lock or Jitter Test\n";
+        title << versionString;
+		title << L" Test 7 - Framerate Lock or Jitter Test\n";
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
         double avgFrameTime = m_totalFrameTime / m_frameCount;
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+
         title << "Grid " << nRows << " x " << nCols << "\n";
 
-        // if this implementation supports v-total fixed-rate mode, then display current setting
-        switch (m_vTotalMode)
+        // display V-Total mode if requested
+        if (m_vTotalModeRequested == VTotalMode::Fixed)
         {
-        case VTotalMode::Adaptive: title << "V-Total: Adaptive\n";   break;
-        case VTotalMode::Fixed:    title << "V-Total: Fixed\n";      break;
+            if (m_vTotalFixedApproved)
+            {
+                title << "V-Total: Fixed\n";
+            }
+            else
+            {
+                title << "V-Total: Adaptive\n";
+            }
         }
+        else
+            title << L"\n";
 
         title << L"Select refresh rate using Up/Down arrows\n";
         title << m_hideTextString;
@@ -2943,12 +3043,15 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
     if (m_showExplanatoryText)
     {
         std::wstringstream title;
-        title << L"8 Motion Blur Tuning\n";
+        title << versionString;
+        title << L" Test 8 - Motion Blur Tuning\n";
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
         title << "Frame Fraction: ";
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
@@ -3028,7 +3131,8 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)             
         double refreshRate = m_targetFrameRate;
 
         std::wstringstream title;
-        title << L"9 Game Judder Removal";
+        title << versionString;
+        title << L" Test 9 - Game Judder Removal";
         if (bBFI)
             title << "  BFI";
         title << "\nTarget:  ";
@@ -3037,6 +3141,8 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)             
         title << "Current: ";
         title << fixed << setw(10) << setprecision(3);
         title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(7) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
         title << L"\nSelect App Work time using Up/Down arrows\n";
         title << m_hideTextString;
@@ -3086,17 +3192,23 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                
         double refreshRate = m_targetFrameRate;
 
         std::wstringstream title;
-        title << L"0 Tearing Check\n";
+        title << versionString;
+        title << L" Test 10 - Tearing Check\n";
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+
         double avgFrameTime = m_totalFrameTime / m_frameCount;
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
+        title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
         title << "Grid " << nCols;
 
         title << L"\nSelect frame rate using Up/Down arrows\n";
@@ -3664,8 +3776,13 @@ void Game::ChangeTestPattern(bool increment)
             unsigned int testInt = static_cast<unsigned int>(m_currentTest) + 1;
             m_currentTest = static_cast<TestPattern>(testInt);
         }
+
+        // skip latency test 4 for now:
+        if (m_currentTest == TestPattern::DisplayLatency)
+            m_currentTest = TestPattern::GrayToGray;
+
     }
-    else
+    else    //decrement
     {
         if (TestPattern::StartOfTest == m_currentTest)
         {
@@ -3676,6 +3793,11 @@ void Game::ChangeTestPattern(bool increment)
             unsigned int testInt = static_cast<unsigned int>(m_currentTest) - 1;
             m_currentTest = static_cast<TestPattern>(testInt);
         }
+
+        // skip latency test 4 for now:
+        if (m_currentTest == TestPattern::DisplayLatency)
+            m_currentTest = TestPattern::FlickerVariable;
+
     }
 
     // stop sensing if we switch tests

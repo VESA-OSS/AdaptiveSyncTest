@@ -11,6 +11,8 @@
 
 #pragma once
 
+//#define FAVT    // Turn on Fixed Average V-Total support
+
 namespace DX
 {
     // Provides an interface for an application that owns DeviceResources to be notified of the device being lost or created.
@@ -39,7 +41,8 @@ namespace DX
         void RegisterDeviceNotify(IDeviceNotify* deviceNotify) { m_deviceNotify = deviceNotify; }
         HRESULT Present( UINT syncInterval, UINT flags );
         void ChangeBackBufferFormat(DXGI_FORMAT fmt);
-		void SetMetadataNeutral();
+        void SetVTotalMode(BOOL vTotalMode) { m_vTotalMode = vTotalMode; }      // Tell DevResources object when we are requesting v-total Fixed.
+
 
         // The size of the render target, in pixels.
         RECT            GetOutputSize() const { return m_outputSize; }
@@ -108,6 +111,7 @@ namespace DX
         Microsoft::WRL::ComPtr<IDXGISwapChainMedia>     m_mediaSwap;
         Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> m_d3dAnnotation;
         HANDLE                                          m_frameLatencyHandle;
+        BOOL                                            m_vTotalMode;           // True for a FIXED v-total average swapchain
 
         // Direct3D rendering objects. Required for 3D.
         Microsoft::WRL::ComPtr<ID3D11Texture2D>         m_renderTarget;

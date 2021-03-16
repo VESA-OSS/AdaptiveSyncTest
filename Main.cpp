@@ -160,7 +160,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     // Main message loop
     MSG msg = { 0 };
 
-#if 1
+#ifdef FAVT
     // Main message loop:
     INT waitResult;
     HANDLE frameLatencyHandle = g_game->GetFrameLatencyHandle();
@@ -173,7 +173,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
             frameLatencyHandle = g_game->GetFrameLatencyHandle();
 
             // do the game loop logic
-            g_game->Tick(); // ideally this would just Present() and the CPU Update and GPU Render are already done
+            g_game->Tick(); // ideally this would just do Present() as the CPU Update and GPU Render would be already done by here
         }
         else
         {

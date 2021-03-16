@@ -221,6 +221,7 @@ public:
     void ChangeG2GToIndex( INT32 increment);
     void ChangeG2GInterval( INT32 increment);
     void StartTestPattern(void);
+    enum VTotalMode GetVTotalMode(void);
     void ToggleVTotalMode(void);
     void TogglePause(void);
     void ToggleSensing(void);
@@ -375,7 +376,11 @@ private:
     double                      m_targetFrameRate;          // frame rate we want to achieve
     double                      m_targetFrameTime;          // duration of the frame being presented
     bool                        m_vTotalFixedSupported;     // this monitor/GPU supports PresentDuration timings
-    VTotalMode                  m_vTotalMode;               // set Fixed frame rate vs Adaptive (g-sync)
+    VTotalMode                  m_vTotalModeRequested;      // UI requests either Fixed frame rate vs Adaptive (g-sync)
+    bool                        m_vTotalFixedApproved;      // config has approved use of V-Total Fixed
+    uint64_t                    m_lastMonCounts;            // how many QPC counts since last measurement
+    uint64_t                    m_lastMonSyncs;             // how many v-sync Refreshes since last time
+    double                      m_monitorSyncRate;          // frame rate of actual display refreshes per FrameStats API
     bool                        m_paused;                   // whether we are updating data or not
 
     double                      m_maxFrameRate;             // maximum mode enumerated on this config (monitor+driver)
@@ -408,11 +413,12 @@ private:
     double                      m_totalSensorTime;          // sum of sensor time. Used to compute average      4
     double                      m_totalSensorTime2;         // sum of squares. Used to compute variance         4
 
-    bool                        m_g2gFrom;                     // whether we use the "From" color or "To" color    5
+    bool                        m_g2gFrom;                  // whether we use the "From" color or "To" color    5
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
     INT32                       m_g2gInterval;              // number of frames to hold between switches        5
     bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
+    INT32                       m_g2gCounter;               // counter for g2g interval                         5
 
     DropRateEnum                m_frameDropRateEnum;        // select frame rate in frame drop test             6
     bool                        m_bitTable[32][32];         // table to randomize frame durations               6
