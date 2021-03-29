@@ -176,7 +176,6 @@ public:
 		ResetInstructions,          //  H   The help screen
         FlickerConstant,            //  2   MinHz, MaxHz, 60Hz, and 24/48Hz
         FlickerVariable,            //  3   Sine wave vs square wave    should use this for frame drop test too
-        DisplayLatency,             //  4   Measure e2e lag at 60Hz, 90, 120, 180, 240, 300, 360, 420, 480
         GrayToGray,                 //  5   Scene to measure gray-to-gray response time
         FrameDrop,                  //  6   Draw the animated square. 60:10x6, 90:10x9, 120:12x10, 180:15x12, 240:16x15, 
         FrameLock,                  //  7   Select from 23.976, 24, 25, 29.97, 30, 47.952, 48, 50, 59.94, 60Hz -Media Jitter test
@@ -184,6 +183,7 @@ public:
         MotionBlur,                 //  8   Demonstrate correct motion blur vs panel exposure time (frameFraction)
         GameJudder,                 //  9   VRR scrolling image to minimize display duration per game needs (BFI)
         Tearing,                    //  0   Test pattern to show off tearing artifacts at rates outside the valid range.
+        DisplayLatency,             //  4   Measure e2e lag at 60Hz, 90, 120, 180, 240, 300, 360, 420, 480
         EndOfTest,                  // Must always be last.
         WarmUp,                     //  W
         Cooldown,                   // 'C'   on C hotkey
@@ -416,6 +416,7 @@ private:
     bool                        m_g2gFrom;                  // whether we use the "From" color or "To" color    5
     INT32                       m_g2gFromIndex;             // counter for the GtG level to transition from     5
     INT32                       m_g2gToIndex;               // counter for the GtG level we transition to       5
+    double                      m_g2gFrameRate;             // custom frame rate for gray-to-gray test          5
     INT32                       m_g2gInterval;              // number of frames to hold between switches        5
     bool                        m_autoG2G;                  // whether we are doing the automatic G2G Sequence  5
     INT32                       m_g2gCounter;               // counter for g2g interval                         5

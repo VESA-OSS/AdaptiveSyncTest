@@ -9,7 +9,7 @@
 // 
 //*********************************************************
 
-#define versionString L"v0.91 "
+#define versionString L"v0.921"
 
 #include "pch.h"
 
@@ -79,7 +79,7 @@ void Game::ConstructorInternal()
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
     m_mediaRateIndex   = 0;		// select between 60, 90, 120, 180, 240Hz for Jitter                5
 
-    m_latencyTestFrameRate = 60.;//                                                                 4
+    m_latencyTestFrameRate = 1; // Flag for default to max                                          4
     m_sensorConnected = false;  //
     m_sensorNits = 27.0f;       // threshold for detection by sensor in nits                        4
     m_sensing = false;          // 
@@ -95,16 +95,17 @@ void Game::ConstructorInternal()
     m_g2gFrom = true;           // start with "From" color                                          5
     m_g2gFromIndex = 0;         // subtest for Gray To Gray test                                    5
     m_g2gToIndex = 0;           // subtest for Gray To Gray test                                    5
+    m_g2gFrameRate = 1;         // flag for default to max                                          5
     m_g2gCounter = 0;           // counter for interval of gray periods                             5
     m_g2gInterval = 15;         // default interval for G2G switching                               5
 
-    m_frameDropRateEnum = DropRateEnum::Max;    // select subtest for frameDrop test                6
+    m_frameDropRateEnum = DropRateEnum::Max;    // default to max                                   6
     m_frameLockRateIndex = 0;   // select sutbtest for frameDrop test                               7
     m_MotionBlurIndex = maxMotionBlurs;  // start with frame fraction 100%                          8
     m_motionBlurFrameRate = 60.;//                                                                  8
-    m_judderTestFrameRate = 60.;//                                                                  9
+    m_judderTestFrameRate = 1.; // flag for default to max                                          9
     m_fAngle = 0;               // angle of object moving around screen                             8,9
-    m_tearingTestFrameRate = 60.;  //                                                               0
+    m_tearingTestFrameRate = 1; // flag for default to max                                          0
     m_sweepPos = 0;             // position of bar in Tearing test                                  0
 
     m_targetFrameRate = 60.f;
@@ -1020,11 +1021,13 @@ void Game::UpdateGrayToGray()
                 }
                 m_g2gFrom = true;
             }
-            if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))       // skip the diagonal where to and from are same
-                m_g2gCounter = m_g2gInterval;
-            //              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;        // quarter second
+            if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))      // skip the diagonal where to and from are same
+                m_g2gCounter = 0.25*m_targetFrameRate;                          // reset counter to take 250ms at ANY frame rate
+//              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;
 
         }
+
+        m_targetFrameRate = m_maxFrameRate;                 // per CTS
     }
     else      // we are in manual state setting mode (not auto sequence)
     {
@@ -1036,9 +1039,11 @@ void Game::UpdateGrayToGray()
 
         if (m_g2gCounter <= 0)
         {
-            m_g2gFrom = !m_g2gFrom;                         // flip to showing the 2 color
+            m_g2gFrom = !m_g2gFrom;                         // flip to showing the other color
             m_g2gCounter = m_g2gInterval;                   // reset the interval timer
         }
+
+        m_targetFrameRate = m_g2gFrameRate;                 // per CTS
     }
 
     // define color for test patch
@@ -1048,13 +1053,12 @@ void Game::UpdateGrayToGray()
         m_color = GrayToGrayValue(m_g2gToIndex);
 
     // set frame duration accordingly
-    m_targetFrameRate = m_maxFrameRate;
 
+#if 0
     // skip some frames during test#5 to keep panels from tuning overdrive to a fixed rate
     if (m_currentTest == TestPattern::GrayToGray)
     {
-        //TODO delete this test code!!
-        //  m_targetFrameRate = 59.97;
+        //  m_targetFrameRate = 59.97;        // TODO delete this test code!!
         if (((float)rand() / RAND_MAX) > 0.50)                     // about half the time,
         {
             if (m_g2gCounter > 1)                                  // if there is room  left (2 intervals remaining: 1 and 0 )
@@ -1064,7 +1068,8 @@ void Game::UpdateGrayToGray()
             }
         }
     }
-    
+#endif
+
     m_targetFrameTime = 1.0 / m_targetFrameRate;
 
     // run the timer
@@ -1251,7 +1256,7 @@ void Game::ChangeG2GInterval(INT32 increment)
     {
     case TestPattern::GrayToGray:
         m_g2gInterval += increment;
-        m_g2gInterval = clamp(m_g2gInterval, 1, 60);
+        m_g2gInterval = clamp(m_g2gInterval, 1, 90);
         break;
 
     case TestPattern::MotionBlur:
@@ -1314,7 +1319,9 @@ void Game::ChangeSubtest( INT32 increment)
         break;
 
     case TestPattern::GrayToGray:                                                               // 5
-        ChangeG2GToIndex(increment);
+        if (m_shiftKey) increment *= 10;
+        m_g2gFrameRate += increment;
+        m_g2gFrameRate = clamp(m_g2gFrameRate, 20, 1000);
         break;
 
     case TestPattern::FrameDrop:                                                                // 6
@@ -1456,8 +1463,22 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     // initialize those scenes that should default to max frame rate
     // TODO: Keep this below actual frame rate of OS!
-    m_latencyTestFrameRate = m_maxFrameRate; 
-    m_latencyTestFrameRate = m_displayFrequency;    // default this to current OS setting
+    if (m_latencyTestFrameRate < 5 )                                            // 4
+        m_latencyTestFrameRate = m_maxFrameRate; 
+
+//  m_latencyTestFrameRate = m_displayFrequency;    // default this to current OS setting
+
+    if (m_g2gFrameRate < 5 )                                                    // 5
+        m_g2gFrameRate = m_maxFrameRate;
+
+    if (m_motionBlurFrameRate < 5)                                              // 8
+        m_motionBlurFrameRate = m_maxFrameRate;
+
+    if (m_judderTestFrameRate < 5)                                              // 9
+        m_judderTestFrameRate = m_maxFrameRate;
+
+    if (m_tearingTestFrameRate < 5)                                             // 0
+        m_tearingTestFrameRate = m_maxFrameRate;
 
 }
 
@@ -2517,9 +2538,9 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         }
         else
         {
-            title << L"Select 'From' brightness level using ,/. aka </> keys\n";
-            title << L"Select 'To' brightness level using Up/Down arrows\n";
-            title << L"Select switch interval using +/- keys\n";
+            title << L"Select 'From' brightness level using the '<' and '>' keys\n";
+            title << L"Select  'To'  brightness level using the '[' and ']' keys\n";
+            title << L"Select the b/w switch interval using the '+' and '-' keys\n";
         }
         if (!CheckHDR_On())
         {
@@ -3776,11 +3797,6 @@ void Game::ChangeTestPattern(bool increment)
             unsigned int testInt = static_cast<unsigned int>(m_currentTest) + 1;
             m_currentTest = static_cast<TestPattern>(testInt);
         }
-
-        // skip latency test 4 for now:
-        if (m_currentTest == TestPattern::DisplayLatency)
-            m_currentTest = TestPattern::GrayToGray;
-
     }
     else    //decrement
     {
@@ -3793,11 +3809,6 @@ void Game::ChangeTestPattern(bool increment)
             unsigned int testInt = static_cast<unsigned int>(m_currentTest) - 1;
             m_currentTest = static_cast<TestPattern>(testInt);
         }
-
-        // skip latency test 4 for now:
-        if (m_currentTest == TestPattern::DisplayLatency)
-            m_currentTest = TestPattern::FlickerVariable;
-
     }
 
     // stop sensing if we switch tests

@@ -376,6 +376,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             game->ChangeG2GFromIndex(-1);
             break;
 
+        case VK_OEM_4:                                  // left square bracket [
+            game->ChangeG2GToIndex(-1);
+                break;
+        case VK_OEM_6:                                  // right square bracket ]
+            game->ChangeG2GToIndex(+1);
+            break;
+
         case VK_OEM_PLUS:
             game->ChangeG2GInterval(+1);
             break;
