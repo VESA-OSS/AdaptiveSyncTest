@@ -32,3 +32,6 @@
 /x64/
 .gitusers
 
+/AdaptSyncTestTrace001.csv
+/AdaptSyncTest2_FlickerConst001.csv
+/AdaptSyncTest3_FlickerVar001.csv

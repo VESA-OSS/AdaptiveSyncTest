@@ -223,6 +223,7 @@ public:
     void StartTestPattern(void);
     enum VTotalMode GetVTotalMode(void);
     void ToggleVTotalMode(void);
+    void ToggleLogging(void);
     void TogglePause(void);
     void ToggleSensing(void);
     void ToggleAutoG2G(void);
@@ -341,6 +342,7 @@ private:
     TestPattern                 m_currentTest;
     TestPattern                 m_cachedTest;
     bool                        m_shiftKey;                 // whether shift key is pressed
+    bool                        m_logging;                  // whether we are current writing to a log file
     float                       m_color;                    // color to use in test patch this frame (grayscale)
 
     INT32                       m_modeWidth;                // resolution of current mode (actually native res now)
@@ -350,6 +352,8 @@ private:
 
     LARGE_INTEGER               m_qpcFrequency;             // performanmce counter frequency on this PC
     INT64                       m_mediaPresentDuration;     // frame duration when using SwapChainMedia video sync in 0.1us
+    INT32                       m_mediaVsyncCount;          // number of times to repeat the same frame for media playback
+
     INT64                       m_lastReadCounts;           // qpc counts from when we started working on last frame
     double                      m_sleepDelay;               // simulated workload of app in ms
     INT32                       m_frameCount;               // number of frames over which we average
@@ -378,6 +382,7 @@ private:
     bool                        m_vTotalFixedSupported;     // this monitor/GPU supports PresentDuration timings
     VTotalMode                  m_vTotalModeRequested;      // UI requests either Fixed frame rate vs Adaptive (g-sync)
     bool                        m_vTotalFixedApproved;      // config has approved use of V-Total Fixed
+    bool                        m_MPO;                      // we got access to an overlay plane
     uint64_t                    m_lastMonCounts;            // how many QPC counts since last measurement
     uint64_t                    m_lastMonSyncs;             // how many v-sync Refreshes since last time
     double                      m_monitorSyncRate;          // frame rate of actual display refreshes per FrameStats API
@@ -443,6 +448,10 @@ private:
 	DXGI_HDR_METADATA_HDR10		m_Metadata;
 	ColorGamut					m_MetadataGamut;
 
+    char                        m_logFileName[2048];        // name of current log file
+    FILE*                       m_logFile;                  // handle of file where we dump the traces to
+    double                      m_logTime;                  // wall clock time since start of logging
+    double                      m_lastLogTime;              // wall clock time one frame ago...
 
     // TODO: integrate this with the other test resources
     std::map<TestPattern, TestPatternResources>             m_testPatternResources;

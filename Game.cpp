@@ -9,9 +9,10 @@
 // 
 //*********************************************************
 
-#define versionString L"v0.921"
+#define versionString L"v0.922"
 
 #include "pch.h"
+
 
 #include "winioctl.h"
 #include "ntddvdeo.h"
@@ -56,12 +57,16 @@ void Game::ConstructorInternal()
     m_shiftKey = false;         // Whether the shift key is pressed
     m_pModeList = NULL;         // ptr to list of display modes on this output.
     m_numModes = 0;
+    m_logging = false;          // start out not writing to a log file
 
     m_mediaPresentDuration = 0; // Duration when using SwapChainMedia for hardware syncs.
                                 // Units are in 0.1us or 100ns intervals.  Zero 0 = off.
+    m_mediaVsyncCount = 1;      // number of times to repeat the same frame for media playback
+
     m_vTotalFixedSupported = false;         // assume we don't support fixed V-Total mode
     m_vTotalModeRequested = VTotalMode::Adaptive;    // default to stay Adaptive mode
     m_vTotalFixedApproved = false;          // default to assuming it's not working
+    m_MPO = false;              // assume no overlay plane initially
 
     m_minFrameRate =  10;       // fps      these will be overridden by the detection logic.
     m_maxFrameRate = 120;
@@ -216,6 +221,60 @@ void Game::ToggleVTotalMode()
         // tell deviceResources object so it can handle next swapchain resize properly  TODO it probably has to be recreated...
         m_deviceResources->SetVTotalMode( false );
     }
+}
+
+void Game::ToggleLogging()
+{
+    if (!m_logging)
+    {
+        switch ( m_currentTest )
+        {
+            // cases where a media oriented fixed-frame rate is best
+        case TestPattern::FlickerConstant:                                          //  2
+            strncpy(m_logFileName, "AdaptSyncTest2_FlickerConst001.csv", 80);
+            break;
+        case TestPattern::FlickerVariable:                                          //  3 
+            strncpy(m_logFileName, "AdaptSyncTest3_FlickerVar001.csv", 80);
+            break;
+        case TestPattern::DisplayLatency:                                           //  4
+            strncpy(m_logFileName, "AdaptSyncTest4_Latency001.csv", 80);
+            break;
+        case TestPattern::GrayToGray:                                               //  5   
+            strncpy(m_logFileName, "AdaptSyncTest5_GrayToGray001.csv", 80);
+            break;
+        case TestPattern::FrameDrop:                                                //  6 
+            strncpy(m_logFileName, "AdaptSyncTest6_Framedrop001.csv", 80);
+            break;
+        case TestPattern::FrameLock:                                                //  7
+            strncpy(m_logFileName, "AdaptSyncTest7_Jitter001.csv", 80);
+            break;
+        case TestPattern::MotionBlur:                                               //  8
+            strncpy(m_logFileName, "AdaptSyncTest8_Blur001.csv", 80);
+            break;
+        case TestPattern::GameJudder:                                               //  9
+            strncpy(m_logFileName, "AdaptSyncTest9_Judder001.csv", 80);
+            break;
+        case TestPattern::Tearing:                                                  //  0
+            strncpy(m_logFileName, "AdaptSyncTest10_Tearing001.csv", 80);
+            break;
+
+        default:
+            break;
+        }
+
+        // open log file
+        fopen_s(&m_logFile, m_logFileName, "w");
+        fprintf_s(m_logFile, "Time, Mode, Requested, Approved, Measured\n");
+        m_logTime = 0;
+        m_lastLogTime = 0;
+        m_logging = true;
+    }
+    else
+    {
+        fclose(m_logFile);
+        m_logging = false;
+    }
+
 }
 
 void Game::TogglePause()
@@ -574,7 +633,7 @@ void Game::Tick()
             HRESULT hr;
             if (m_mediaPresentDuration != 0)
             {
-                hr = m_deviceResources->Present(1, DXGI_PRESENT_USE_DURATION);
+                hr = m_deviceResources->Present(m_mediaVsyncCount, DXGI_PRESENT_USE_DURATION);
             }
             else
             {
@@ -649,11 +708,72 @@ void Game::Tick()
 
             // use PresentDuration mode in some tests
             UINT closestSmallerDuration = 0, closestLargerDuration = 0;
-            if (m_currentTest == TestPattern::FlickerConstant ||
-                m_currentTest == TestPattern::DisplayLatency ||
-                m_currentTest == TestPattern::FrameLock )
+            if ( m_currentTest == TestPattern::FlickerConstant                                  // 2
+//            || m_currentTest == TestPattern::FlickerVariable                                  // 3
+              || m_currentTest == TestPattern::DisplayLatency                                   // 4
+              || m_currentTest == TestPattern::FrameLock )                                      // 7
             {
+                m_mediaVsyncCount = 1;
                 m_mediaPresentDuration = 10000000*m_targetFrameTime;
+                switch (m_mediaPresentDuration)
+                {
+                    //23.976
+                case 417083:
+                    m_mediaPresentDuration = 208333;//48 //208542;
+                    m_mediaVsyncCount = 2;
+                    break;
+                    //24
+                case 416666:
+                    m_mediaPresentDuration = 208333;//48
+                    m_mediaVsyncCount = 2;
+                    break;
+                    //25
+                case 400000:
+                    m_mediaPresentDuration = 200000;//50
+                    m_mediaVsyncCount = 2;
+                    break;
+                    //29.97
+                case 333667:
+                    m_mediaPresentDuration = 166834;//59.94
+                    m_mediaVsyncCount = 2;
+                    break;
+                    //30
+                case 333333:
+                    m_mediaPresentDuration = 166667;//60
+                    m_mediaVsyncCount = 2;
+                    break;
+                    //47.952
+                case 208541:
+                    m_mediaPresentDuration = 208333;//48
+                    m_mediaVsyncCount = 1;
+                    break;
+                    //48
+                case 208333:
+                    m_mediaPresentDuration = 208333;//48
+                    m_mediaVsyncCount = 1;
+                    break;
+                    //50
+                case 200000:
+                    m_mediaPresentDuration = 200000;//50
+                    m_mediaVsyncCount = 1;
+                    break;
+                    //59.94
+                //case 166805:
+                case 166833:
+                    m_mediaPresentDuration = 166834;//59.94
+                    m_mediaVsyncCount = 1;
+                    break;
+                    //60
+                //case 166638:
+                case 166666:
+                    m_mediaPresentDuration = 166667;//60
+                    m_mediaVsyncCount = 1;
+                    break;
+
+                default:                                // we are not using PresentDuration (FAVT) mode at all
+                    break;
+                }
+
                 hr = scMedia->CheckPresentDurationSupport( m_mediaPresentDuration,
                         &closestSmallerDuration, &closestLargerDuration );
 
@@ -671,7 +791,14 @@ void Game::Tick()
             }
             else    // use a sleep timer
             {
-                double avgRunTime;                                                     // how long the app spends not sleeping
+                // if we didnt get PresentDuration mode, maybe we got an MPO:
+                m_MPO = false;
+                if (mediaStats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY )
+                {
+                    m_MPO = true;
+                }
+                double avgRunTime;                                                      // how long the app spends not sleeping
+                m_mediaPresentDuration = 0;                                             // indicate to not use PresentDuration model
                 if (m_frameCount > 1)
                     avgRunTime = m_totalRunningTime / m_frameCount;
                 else
@@ -708,7 +835,7 @@ void Game::Tick()
             HRESULT hr;
             if (m_mediaPresentDuration != 0)
             {
-                hr = m_deviceResources->Present(1, DXGI_PRESENT_USE_DURATION);
+                hr = m_deviceResources->Present(m_mediaVsyncCount, DXGI_PRESENT_USE_DURATION);
             }
             else
             {
@@ -771,6 +898,9 @@ void Game::Tick()
 
     // track data since app startup
     m_totalTimeSinceStart += m_frameTime;       // TODO totalTime should not be a double but a uint64 in microseconds
+
+    m_lastLogTime = m_logTime;                  // save last value
+    m_logTime += m_frameTime;                   // time since logging started
 }
 
 #if 0 
@@ -919,15 +1049,13 @@ void Game::UpdateFlickerVariable()
 
         case WaveEnum::SquareWave:
         {
-            m_waveCounter--;
-            if (m_waveCounter > 0)
-            {
-                if (m_waveUp)
-                    m_targetFrameRate = maxFrameRate;
-                else
-                    m_targetFrameRate = m_minFrameRate;
-            }
+            if (m_waveUp)
+                m_targetFrameRate = maxFrameRate;
             else
+                m_targetFrameRate = m_minFrameRate;
+
+            m_waveCounter--;
+            if (m_waveCounter <= 0)
             {
                 m_waveUp = !m_waveUp;           // toggle to wave down
                 m_waveCounter = SQUARE_COUNT;   // reset counter
@@ -949,7 +1077,7 @@ void Game::UpdateFlickerVariable()
             double baseline = 0.5 * (maxFrameRate + m_minFrameRate);
             double angle = m_totalTimeSinceStart;
 
-            m_targetFrameRate = amplitude * sin(angle) + baseline;
+            m_targetFrameRate = amplitude * sin(angle*M_PI_2*2) + baseline;         // 2Hz
         }
         break;
 
@@ -1077,7 +1205,7 @@ void Game::UpdateGrayToGray()
 
 }
 
-// update routine for Frame Drop test                                                                        6
+// update routine for Frame Drop test                                                                      6
 void Game::UpdateFrameDrop()
 {
     // determine what rate to use based on the up/down arrow key setting
@@ -1094,7 +1222,7 @@ void Game::UpdateFrameDrop()
         break;
     case DropRateEnum::SquareWave:                // pick a random frame duration within the valid range
         if (m_frameCounter & 0x01)                // alternate between Min and Max
-            m_targetFrameRate = 48.0;
+            m_targetFrameRate = m_minFrameRate;
         else
             m_targetFrameRate = m_maxFrameRate;
         break;
@@ -2032,15 +2160,22 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
         {
             if (m_vTotalFixedApproved)
             {
-                title << "V-Total: Fixed\n";
+                title << "V-Total: Fixed\n";                        // green -got presentDuration 
+            }
+            else if (m_MPO)
+            {
+                title << "MPO Overlay\n";                           // blue  -just an overlay
             }
             else
             {
-                title << "V-Total: Adaptive\n";
+                title << "V-Total: Adaptive\n";                     // red   -none of the above
             }
         }
         else
             title << L"\n";
+
+        if (m_logging)
+            title << L"Logging\n";
 
         title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select refresh rate using Up/Down arrows\n";
@@ -2048,6 +2183,13 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
 	}
+
+    // dump data to log file
+    if (m_logging)
+    {
+//      fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+//          m_lastLogTime * 1000., modeLog, targetDuration / 10000., m_selectedDuration / 10000., synchDuration / 10000.);
+    }
 
 	m_newTestSelected = false;
 
@@ -2139,6 +2281,9 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				    
 			title << sRGBval;
 		}
 #endif
+        if (m_logging)
+            title << L"Logging\n";
+
         title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select zigzag vs square wave etc using Up/Down arrows\n";
         title << m_hideTextString;
@@ -2434,6 +2579,9 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
         }
         title << "\n";
 
+        if (m_logging)
+            title << L"Logging\n";
+
         // there is some chance that reading the luminance interferes with timing...
 #ifdef NOT_DEBUG
         float lum = m_sensor.ReadLuminance();
@@ -2553,6 +2701,8 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
             title << "  To:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gToIndex)*80.f << "nits\n";
         }
         title << "Press A to toggle Automatic sequence\n";
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true );
@@ -2800,7 +2950,11 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
         title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
         title << "Grid " << nRows << " x " << nCols;
+
         title << L"\nSelect refresh rate using Up/Down arrows\n";
+
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -2981,6 +3135,8 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
             title << L"\n";
 
         title << L"Select refresh rate using Up/Down arrows\n";
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3078,6 +3234,8 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
         title << L"\nSelect frame rate using Up/Down arrows\n";
         title << L"Select Frame Fraction using +/- keys\n";
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3166,6 +3324,8 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)             
         title << setw(7) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
         title << L"\nSelect App Work time using Up/Down arrows\n";
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3230,9 +3390,11 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
         title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
-        title << "Grid " << nCols;
+        title << "Columns: " << nCols;
 
         title << L"\nSelect frame rate using Up/Down arrows\n";
+        if (m_logging)
+            title << L"Logging\n";
         title << m_hideTextString;
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3243,14 +3405,12 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                
 float3 roundf3(float3 in)
 {
 	float3 out;
-	if (in.x < 0) in.x = 0;
-	if (in.y < 0) in.y = 0;
-	if (in.z < 0) in.z = 0;
 
-	out.x = roundf(in.x);
+    out.x = roundf(in.x);
 	out.y = roundf(in.y);
 	out.z = roundf(in.z);
-	return out;
+	
+    return out;
 }
 
 void Game::GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx)
@@ -3813,6 +3973,10 @@ void Game::ChangeTestPattern(bool increment)
 
     // stop sensing if we switch tests
     m_sensing = false;
+
+    // If logging, then stop when we switch tests
+    if (m_logging)
+        ToggleLogging();
 
     //	m_showExplanatoryText = true;
     m_newTestSelected = true;
