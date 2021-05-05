@@ -9,7 +9,7 @@
 // 
 //*********************************************************
 
-#define versionString L"v0.922"
+#define versionString L"v0.93"
 
 #include "pch.h"
 
@@ -124,6 +124,8 @@ void Game::ConstructorInternal()
     m_totalTimeSinceStart = 0;  // init clock since app start
     m_paused = 0;               // start out unpaused
 
+    m_fileCounter = 0;          // next file name we can use 
+
     // map the storage into the pointer array
     for ( int i = 0; i < frameLogLength; i++)
     {
@@ -227,35 +229,36 @@ void Game::ToggleLogging()
 {
     if (!m_logging)
     {
+        m_fileCounter++;
         switch ( m_currentTest )
         {
             // cases where a media oriented fixed-frame rate is best
-        case TestPattern::FlickerConstant:                                          //  2
-            strncpy(m_logFileName, "AdaptSyncTest2_FlickerConst001.csv", 80);
+        case TestPattern::FlickerConstant:                                                          //  2
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest2_FlickerConst%03d.csv", m_fileCounter );
             break;
-        case TestPattern::FlickerVariable:                                          //  3 
-            strncpy(m_logFileName, "AdaptSyncTest3_FlickerVar001.csv", 80);
+        case TestPattern::FlickerVariable:                                                          //  3 
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest3_FlickerVar%03d.csv", m_fileCounter );
             break;
-        case TestPattern::DisplayLatency:                                           //  4
-            strncpy(m_logFileName, "AdaptSyncTest4_Latency001.csv", 80);
+        case TestPattern::DisplayLatency:                                                           //  4
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest4_Latency%03d.csv", m_fileCounter );
             break;
-        case TestPattern::GrayToGray:                                               //  5   
-            strncpy(m_logFileName, "AdaptSyncTest5_GrayToGray001.csv", 80);
+        case TestPattern::GrayToGray:                                                               //  5   
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest5_GrayToGray%03d.csv", m_fileCounter );
             break;
-        case TestPattern::FrameDrop:                                                //  6 
-            strncpy(m_logFileName, "AdaptSyncTest6_Framedrop001.csv", 80);
+        case TestPattern::FrameDrop:                                                                //  6 
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest6_Framedrop%03d.csv", m_fileCounter );
             break;
-        case TestPattern::FrameLock:                                                //  7
-            strncpy(m_logFileName, "AdaptSyncTest7_Jitter001.csv", 80);
+        case TestPattern::FrameLock:                                                                //  7
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest7_Jitter%03d.csv", m_fileCounter );
             break;
-        case TestPattern::MotionBlur:                                               //  8
-            strncpy(m_logFileName, "AdaptSyncTest8_Blur001.csv", 80);
+        case TestPattern::MotionBlur:                                                               //  8
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest8_Blur%03d.csv", m_fileCounter );
             break;
-        case TestPattern::GameJudder:                                               //  9
-            strncpy(m_logFileName, "AdaptSyncTest9_Judder001.csv", 80);
+        case TestPattern::GameJudder:                                                               //  9
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest9_Judder%03d.csv", m_fileCounter );
             break;
-        case TestPattern::Tearing:                                                  //  0
-            strncpy(m_logFileName, "AdaptSyncTest10_Tearing001.csv", 80);
+        case TestPattern::Tearing:                                                                  //  0
+            sprintf_s(m_logFileName, 999, "AdaptSyncTest10_Tearing%03d.csv", m_fileCounter );
             break;
 
         default:
@@ -263,8 +266,9 @@ void Game::ToggleLogging()
         }
 
         // open log file
-        fopen_s(&m_logFile, m_logFileName, "w");
-        fprintf_s(m_logFile, "Time, Mode, Requested, Approved, Measured\n");
+        int err = 0;
+        err = fopen_s(&m_logFile, m_logFileName, "w" );
+        fprintf_s(m_logFile, "Time, Mode, Requested, Actual, Monitor, Brightness\n");
         m_logTime = 0;
         m_lastLogTime = 0;
         m_logging = true;
@@ -1075,9 +1079,9 @@ void Game::UpdateFlickerVariable()
         {
             double amplitude = 0.5 * (maxFrameRate - m_minFrameRate);
             double baseline = 0.5 * (maxFrameRate + m_minFrameRate);
-            double angle = m_totalTimeSinceStart;
+            double angle = m_totalTimeSinceStart * M_PI/3.0;         // 60deg/sec = period of 6s
 
-            m_targetFrameRate = amplitude * sin(angle*M_PI_2*2) + baseline;         // 2Hz
+            m_targetFrameRate = amplitude * sin(angle) + baseline;
         }
         break;
 
@@ -2187,8 +2191,8 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
     // dump data to log file
     if (m_logging)
     {
-//      fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
-//          m_lastLogTime * 1000., modeLog, targetDuration / 10000., m_selectedDuration / 10000., synchDuration / 10000.);
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime*1000.f, 0.f, m_targetFrameTime*1000.f, m_frameTime*1000., 1000./m_monitorSyncRate );
     }
 
 	m_newTestSelected = false;
@@ -2290,6 +2294,13 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				    
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
 	}
+
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
 
 	m_newTestSelected = false;
 
@@ -2596,18 +2607,25 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2 * ctx) // ****
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
 
     }
-    m_newTestSelected = false;
 
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
+
+    m_newTestSelected = false;
 }
 
 
-void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)                         //**************** 5.
+void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)                         //**************** 5.
 {
     if (m_newTestSelected)
     {
         if (m_sensorConnected)
         {
-//          m_sensor.Disconnect();
+            //          m_sensor.Disconnect();
             ResetFrameStats();
         }
     }
@@ -2652,19 +2670,19 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         center.y + size * 0.50f
     };
     ctx->FillRectangle(&tenPercentRect, testBrush.Get());
-    
-	// Everything below this point should be hidden during actual measurements.
-	if (m_showExplanatoryText)
-	{
-		std::wstringstream title;
+
+    // Everything below this point should be hidden during actual measurements.
+    if (m_showExplanatoryText)
+    {
+        std::wstringstream title;
         title << versionString;
-		title << L" Test 5 - Gray To Gray: ";
+        title << L" Test 5 - Gray To Gray: ";
         title << L"Switching every " << m_g2gInterval << " frames. ";
         if (m_g2gFrom)
             title << L"From    ";
         else
             title << L"     To ";
-        title << fixed << setw(m_g2gCounter+1) << m_g2gCounter;
+        title << fixed << setw(m_g2gCounter + 1) << m_g2gCounter;
 
         title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -2680,8 +2698,8 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
         title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
-        if ( m_autoG2G )
-        { 
+        if (m_autoG2G)
+        {
             title << L"\nAutomatic sequence:\n";
         }
         else
@@ -2697,18 +2715,25 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2 * ctx)            
         }
         else
         {
-            title << "From:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gFromIndex)*80.f << "nits";
-            title << "  To:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gToIndex)*80.f << "nits\n";
+            title << "From:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gFromIndex) * 80.f << "nits";
+            title << "  To:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gToIndex) * 80.f << "nits\n";
         }
         title << "Press A to toggle Automatic sequence\n";
         if (m_logging)
             title << L"Logging\n";
         title << m_hideTextString;
 
-		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true );
-	}
-	m_newTestSelected = false;
+        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
+    }
 
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate, c*10. + 10.);
+    }
+
+    m_newTestSelected = false;
 }
 
 bool isPrime(int n)
@@ -2959,8 +2984,15 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)              
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
     }
-    m_newTestSelected = false;
 
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
+
+    m_newTestSelected = false;
 }
 
 void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	                          //********************** 7
@@ -3142,8 +3174,14 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
 	}
 
-    m_newTestSelected = false;
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
 
+    m_newTestSelected = false;
 }
 
 void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
@@ -3241,8 +3279,14 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
     }
 
-    m_newTestSelected = false;
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
 
+    m_newTestSelected = false;
 }
 
 void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)                     // ********************** 9.
@@ -3330,6 +3374,14 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)             
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
     }
+
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
+
     m_newTestSelected = false;
 }
 
@@ -3399,6 +3451,14 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)                
 
         RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
     }
+
+    // dump data to log file
+    if (m_logging)
+    {
+        fprintf_s(m_logFile, "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+            m_lastLogTime * 1000.f, 0.f, m_targetFrameTime * 1000.f, m_frameTime * 1000., 1000. / m_monitorSyncRate);
+    }
+
     m_newTestSelected = false;
 }
 

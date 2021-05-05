@@ -448,7 +448,8 @@ private:
 	DXGI_HDR_METADATA_HDR10		m_Metadata;
 	ColorGamut					m_MetadataGamut;
 
-    char                        m_logFileName[2048];        // name of current log file
+    char                        m_logFileName[1024];        // name of current log file
+    UINT32                      m_fileCounter;              // number of next unique file name
     FILE*                       m_logFile;                  // handle of file where we dump the traces to
     double                      m_logTime;                  // wall clock time since start of logging
     double                      m_lastLogTime;              // wall clock time one frame ago...
