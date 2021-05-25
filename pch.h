@@ -1,12 +1,12 @@
-//********************************************************* 
-// 
-// Copyright (c) Microsoft. All rights reserved. 
-// This code is licensed under the MIT License (MIT). 
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF 
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY 
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR 
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT. 
-// 
+﻿//*********************************************************
+//
+// Copyright (c) Microsoft. All rights reserved.
+// This code is licensed under the MIT License (MIT).
+// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
+// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
+// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
+// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
+//
 //*********************************************************
 
 #pragma once
@@ -28,6 +28,16 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+#include <winrt/base.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Graphics.h>
+
+namespace winrt::impl
+{
+    template <typename Async>
+    auto wait_for(Async const& async, Windows::Foundation::TimeSpan const& timeout);
+}
 
 #include <wrl/client.h>
 #include <wrl.h>
@@ -56,22 +66,27 @@
 
 #include <stdio.h>
 
+#pragma comment(lib, "windowsapp")
+
 namespace DX
 {
     // Helper class for COM exceptions
     class com_exception : public std::exception
     {
-    public:
-        com_exception(HRESULT hr) : result(hr) {}
+       public:
+        com_exception(HRESULT hr)
+            : result(hr)
+        {
+        }
 
         virtual const char* what() const override
         {
-            static char s_str[64] = { 0 };
+            static char s_str[64] = {0};
             sprintf_s(s_str, "Failure with HRESULT of %08X", result);
             return s_str;
         }
 
-    private:
+       private:
         HRESULT result;
     };
 
@@ -98,12 +113,12 @@ namespace DX
         using namespace Microsoft::WRL;
 
         CREATEFILE2_EXTENDED_PARAMETERS extendedParams = {};
-        extendedParams.dwSize = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
-        extendedParams.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
-        extendedParams.dwFileFlags = FILE_FLAG_SEQUENTIAL_SCAN;
-        extendedParams.dwSecurityQosFlags = SECURITY_ANONYMOUS;
-        extendedParams.lpSecurityAttributes = nullptr;
-        extendedParams.hTemplateFile = nullptr;
+        extendedParams.dwSize                          = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
+        extendedParams.dwFileAttributes                = FILE_ATTRIBUTE_NORMAL;
+        extendedParams.dwFileFlags                     = FILE_FLAG_SEQUENTIAL_SCAN;
+        extendedParams.dwSecurityQosFlags              = SECURITY_ANONYMOUS;
+        extendedParams.lpSecurityAttributes            = nullptr;
+        extendedParams.hTemplateFile                   = nullptr;
 
         Wrappers::FileHandle file(CreateFile2(filename, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, &extendedParams));
         if (file.Get() == INVALID_HANDLE_VALUE)
@@ -132,4 +147,4 @@ namespace DX
 
         return S_OK;
     }
-}
+}  // namespace DX
