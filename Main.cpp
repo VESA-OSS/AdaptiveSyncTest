@@ -1,12 +1,12 @@
-//********************************************************* 
-// 
-// Copyright (c) Microsoft. All rights reserved. 
-// This code is licensed under the MIT License (MIT). 
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF 
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY 
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR 
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT. 
-// 
+﻿//*********************************************************
+//
+// Copyright (c) Microsoft. All rights reserved.
+// This code is licensed under the MIT License (MIT).
+// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
+// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
+// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
+// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
+//
 //*********************************************************
 
 #include "pch.h"
@@ -20,21 +20,20 @@ namespace
 };
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-void ToggleFullscreen(HWND hWnd);
+void             ToggleFullscreen(HWND hWnd);
 
-bool CheckTimeBombExpired();
-SYSTEMTIME GetExpiryTime();
+bool              CheckTimeBombExpired();
+const SYSTEMTIME* GetExpiryTime();
 
-LONG g_wndStyle = WS_OVERLAPPEDWINDOW;
-RECT g_wndRect = {};
-bool g_fullscreen = false;
-const PWSTR g_appTitle = L"VESA AdaptiveSync Certification Tests";
+LONG           g_wndStyle   = WS_OVERLAPPEDWINDOW;
+RECT           g_wndRect    = {};
+bool           g_fullscreen = false;
+const wchar_t* g_appTitle   = L"VESA AdaptiveSync Certification Tests";
 
 // Indicates to hybrid graphics systems to prefer the discrete part by default
-extern "C"
-{
-    __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
-    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+extern "C" {
+__declspec(dllexport) DWORD NvOptimusEnablement                = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 
 // Entry point
@@ -56,18 +55,18 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     {
         // Register class
         WNDCLASSEX wcex;
-        wcex.cbSize = sizeof(WNDCLASSEX);
-        wcex.style = CS_HREDRAW | CS_VREDRAW;
-        wcex.lpfnWndProc = WndProc;
-        wcex.cbClsExtra = 0;
-        wcex.cbWndExtra = 0;
-        wcex.hInstance = hInstance;
-        wcex.hIcon = LoadIcon(hInstance, L"IDI_ICON");
-        wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wcex.hbrBackground = (HBRUSH) (COLOR_WINDOW + 1);
-        wcex.lpszMenuName = nullptr;
+        wcex.cbSize        = sizeof(WNDCLASSEX);
+        wcex.style         = CS_HREDRAW | CS_VREDRAW;
+        wcex.lpfnWndProc   = WndProc;
+        wcex.cbClsExtra    = 0;
+        wcex.cbWndExtra    = 0;
+        wcex.hInstance     = hInstance;
+        wcex.hIcon         = LoadIcon(hInstance, L"IDI_ICON");
+        wcex.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wcex.lpszMenuName  = nullptr;
         wcex.lpszClassName = L"DisplayHDRComplianceTestsWindowClass";
-        wcex.hIconSm = LoadIcon(wcex.hInstance, L"IDI_ICON");
+        wcex.hIconSm       = LoadIcon(wcex.hInstance, L"IDI_ICON");
         if (!RegisterClassEx(&wcex))
             return 1;
 
@@ -76,26 +75,25 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
         g_game->GetDefaultSize(w, h);
 
         RECT rc;
-        rc.top = 0;
-        rc.left = 0;
-        rc.right = static_cast<LONG>(w); 
+        rc.top    = 0;
+        rc.left   = 0;
+        rc.right  = static_cast<LONG>(w);
         rc.bottom = static_cast<LONG>(h);
 
         AdjustWindowRect(&rc, g_wndStyle, FALSE);
 
-        HWND hwnd = CreateWindowEx(
-            0,
-            L"DisplayHDRComplianceTestsWindowClass",
-            g_appTitle,
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            rc.right - rc.left,
-            rc.bottom - rc.top,
-            nullptr,
-            nullptr,
-            hInstance,
-            nullptr);
+        HWND hwnd = CreateWindowEx(0,
+                                   L"DisplayHDRComplianceTestsWindowClass",
+                                   g_appTitle,
+                                   WS_OVERLAPPEDWINDOW,
+                                   CW_USEDEFAULT,
+                                   CW_USEDEFAULT,
+                                   rc.right - rc.left,
+                                   rc.bottom - rc.top,
+                                   nullptr,
+                                   nullptr,
+                                   hInstance,
+                                   nullptr);
 
         if (!hwnd)
             return 1;
@@ -107,17 +105,16 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
         msg << L"This prerelease version is only valid until: ";
 
         WCHAR dateStr[255];
-        int ignored = GetDateFormatEx(
-            LOCALE_NAME_USER_DEFAULT,
-            DATE_SHORTDATE,
-            &GetExpiryTime(),
-            nullptr, // Format
-            dateStr,
-            ARRAYSIZE(dateStr),
-            nullptr); // Reserved
+        ::GetDateFormatEx(LOCALE_NAME_USER_DEFAULT,
+                          DATE_SHORTDATE,
+                          GetExpiryTime(),
+                          nullptr,  // Format
+                          dateStr,
+                          ARRAYSIZE(dateStr),
+                          nullptr);  // Reserved
         msg << dateStr;
 
-#if 0    // disable time bomb
+#if 0  // disable time bomb
         if (CheckTimeBombExpired())
         {
             MessageBoxEx(hwnd, msg.str().c_str(), L"Windows HDR display color performance", MB_OK, 0);
@@ -127,7 +124,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
         ShowWindow(hwnd, nCmdShow);
 
-        SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(g_game.get()) );
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(g_game.get()));
 
         GetClientRect(hwnd, &rc);
 
@@ -140,29 +137,29 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
         ToggleFullscreen(hwnd);
 #endif
 
-#if 1       // TODO re-enable cursor?
+#if 1  // TODO re-enable cursor?
 
         // We never want to see the cursor in this app.
         CURSORINFO ci = {};
-        ci.cbSize = sizeof(CURSORINFO);
-        BOOL status = GetCursorInfo(&ci);
+        ci.cbSize     = sizeof(CURSORINFO);
+        BOOL status   = GetCursorInfo(&ci);
+        UNREFERENCED_PARAMETER(status);
+
         int cursorCount = 0;
 
         do
         {
-            cursorCount = ShowCursor(FALSE); // This decrements cursorCount by 1.
-        } while (cursorCount >= 0); // -1 means invisible cursor.
+            cursorCount = ShowCursor(FALSE);  // This decrements cursorCount by 1.
+        } while (cursorCount >= 0);           // -1 means invisible cursor.
 #endif
-
     }
 
-
     // Main message loop
-    MSG msg = { 0 };
+    MSG msg = {0};
 
 #ifdef FAVT
     // Main message loop:
-    INT waitResult;
+    INT    waitResult;
     HANDLE frameLatencyHandle = g_game->GetFrameLatencyHandle();
     while ((waitResult = MsgWaitForMultipleObjects(1, &frameLatencyHandle, FALSE, 100, QS_ALLINPUT)) != WAIT_FAILED)
     {
@@ -173,7 +170,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
             frameLatencyHandle = g_game->GetFrameLatencyHandle();
 
             // do the game loop logic
-            g_game->Tick(); // ideally this would just do Present() as the CPU Update and GPU Render would be already done by here
+            g_game->Tick();  // ideally this would just do Present() as the CPU Update and GPU Render would be already done by here
         }
         else
         {
@@ -183,7 +180,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
                 {
                     g_game.reset();
                     CoUninitialize();
-                    return (int) msg.wParam;
+                    return (int)msg.wParam;
                 }
 
                 TranslateMessage(&msg);
@@ -191,7 +188,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
             }
         }
     }
-
 
 #else
     while (WM_QUIT != msg.message)
@@ -208,21 +204,20 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     }
 #endif
 
-
     g_game.reset();
     CoUninitialize();
-    return (int) msg.wParam;
+    return (int)msg.wParam;
 }
 
 // Windows procedure
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     PAINTSTRUCT ps;
-    HDC hdc;
+    HDC         hdc;
 
     static bool s_in_sizemove = false;
-    static bool s_in_suspend = false;
-    static bool s_minimized = false;
+    static bool s_in_suspend  = false;
+    static bool s_minimized   = false;
 
     auto game = reinterpret_cast<Game*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
 
@@ -272,13 +267,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
-    case WM_GETMINMAXINFO:
-        {
-            auto info = reinterpret_cast<MINMAXINFO*>(lParam);
-            info->ptMinTrackSize.x = 320;
-            info->ptMinTrackSize.y = 200;
-        }
-        break;
+    case WM_GETMINMAXINFO: {
+        auto info              = reinterpret_cast<MINMAXINFO*>(lParam);
+        info->ptMinTrackSize.x = 320;
+        info->ptMinTrackSize.y = 200;
+    }
+    break;
 
     case WM_ACTIVATEAPP:
         if (game)
@@ -315,7 +309,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_DESTROY:
-//      game->ReleaseLatencyHandle();           TODO: finish this!
+        //      game->ReleaseLatencyHandle();           TODO: finish this!
         game->DisconnectSensor();
         PostQuitMessage(0);
         break;
@@ -328,7 +322,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         // Handle keyboard inputs;
         // https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-    case WM_KEYDOWN:                    // all down keystrokes will have auto repeat auto-repeat autorepeat
+    case WM_KEYDOWN:  // all down keystrokes will have auto repeat auto-repeat autorepeat
         switch (wParam)
         {
         case VK_SHIFT:
@@ -343,10 +337,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
 
         case VK_OEM_PLUS:
-            game->ChangeG2GInterval(+1);        // process +/- keys
+            game->ChangeG2GInterval(+1);  // process +/- keys
             break;
         case VK_OEM_MINUS:
-            game->ChangeG2GInterval(-1);       // process +/- keys
+            game->ChangeG2GInterval(-1);  // process +/- keys
             break;
         }
         break;
@@ -382,82 +376,82 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             game->ChangeG2GFromIndex(-1);
             break;
 
-        case VK_OEM_4:                                  // left square bracket [
+        case VK_OEM_4:  // left square bracket [
             game->ChangeG2GToIndex(-1);
-                break;
-        case VK_OEM_6:                                  // right square bracket ]
+            break;
+        case VK_OEM_6:  // right square bracket ]
             game->ChangeG2GToIndex(+1);
             break;
 
-        case VK_ESCAPE:         // Youtube compat
+        case VK_ESCAPE:  // Youtube compat
             if (g_fullscreen)
             {
                 ToggleFullscreen(hWnd);
             }
             break;
-        case 0x41:                                                        // 'A'
+        case 0x41:  // 'A'
             game->ToggleAutoG2G();
             break;
-        case 0x43:                                                        // 'C'
+        case 0x43:  // 'C'
             game->SetTestPattern(Game::TestPattern::Cooldown);
             break;
-        case 0x4C:                                                        // 'L'
+        case 0x4C:  // 'L'
             game->ToggleLogging();
             break;
-        case 0x52:                                                        // 'R'
+        case 0x52:  // 'R'
             game->ResetCurrentStats();
             break;
-        case 0x53:                                                        // 'S'
+        case 0x53:  // 'S'
             game->ToggleSensing();
             break;
-        case 0x48:                                                        // 'H'
+        case 0x48:  // 'H'
             game->SetTestPattern(Game::TestPattern::ResetInstructions);
             break;
-        case 0x70:                                                        // F1
+        case 0x70:  // F1
             game->ReconnectSensor();
             break;
-        case 0x57:                                                        // 'W'
+        case 0x57:  // 'W'
             game->SetTestPattern(Game::TestPattern::WarmUp);
             break;
         case VK_PAUSE:
-        case 0x50:                                                        // 'P'
+        case 0x50:  // 'P'
             game->TogglePause();
             break;
-        case 0x31:                                                        // '1'
+        case 0x31:  // '1'
             game->SetTestPattern(Game::TestPattern::ConnectionProperties);
             break;
-        case 0x44:                                                        // 'D'
+        case 0x44:  // 'D'
             game->SetTestPattern(Game::TestPattern::PanelCharacteristics);
             break;
-        case 0x32:                                                        // '2'
+        case 0x32:  // '2'
             game->SetTestPattern(Game::TestPattern::FlickerConstant);
             break;
-        case 0x33:                                                        // '3'
+        case 0x33:  // '3'
             game->SetTestPattern(Game::TestPattern::FlickerVariable);
             break;
-        case 0x34:                                                        // '4'
+        case 0x34:  // '4'
             game->SetTestPattern(Game::TestPattern::DisplayLatency);
             break;
-		case 0x35:                                                        // '5'
+        case 0x35:  // '5'
             game->SetTestPattern(Game::TestPattern::GrayToGray);
             break;
-        case 0x36:                                                        // '6'
+        case 0x36:  // '6'
             game->SetTestPattern(Game::TestPattern::FrameDrop);
             break;
-        case 0x37:                                                        // '7'
+        case 0x37:  // '7'
             game->SetTestPattern(Game::TestPattern::FrameLock);
             break;
-        case 0x38:                                                        // '8'
+        case 0x38:  // '8'
             game->SetTestPattern(Game::TestPattern::MotionBlur);
             break;
-		case 0x39:                                                        // '9'
-			game->SetTestPattern(Game::TestPattern::GameJudder);
-			break;
-		case 0x30:                                                        // '0'
-        case 0x54:                                                        // 'T'
+        case 0x39:  // '9'
+            game->SetTestPattern(Game::TestPattern::GameJudder);
+            break;
+        case 0x30:  // '0'
+        case 0x54:  // 'T'
             game->SetTestPattern(Game::TestPattern::Tearing);
             break;
-        case 0x56:                                                        // 'V'
+        case 0x56:  // 'V'
             game->ToggleVTotalMode();
             break;
         default:
@@ -492,14 +486,13 @@ void ToggleFullscreen(HWND hWnd)
         // Restore the window's attributes and size.
         SetWindowLong(hWnd, GWL_STYLE, g_wndStyle);
 
-        SetWindowPos(
-            hWnd,
-            HWND_NOTOPMOST,
-            g_wndRect.left,
-            g_wndRect.top,
-            g_wndRect.right - g_wndRect.left,
-            g_wndRect.bottom - g_wndRect.top,
-            SWP_FRAMECHANGED | SWP_NOACTIVATE);
+        SetWindowPos(hWnd,
+                     HWND_NOTOPMOST,
+                     g_wndRect.left,
+                     g_wndRect.top,
+                     g_wndRect.right - g_wndRect.left,
+                     g_wndRect.bottom - g_wndRect.top,
+                     SWP_FRAMECHANGED | SWP_NOACTIVATE);
 
         ShowWindow(hWnd, SW_NORMAL);
     }
@@ -508,38 +501,39 @@ void ToggleFullscreen(HWND hWnd)
         // Save the old window rect so we can restore it when exiting fullscreen mode.
         GetWindowRect(hWnd, &g_wndRect);
 
-		// Make the window borderless so that the client area can fill the screen.
-		SetWindowLong(hWnd, GWL_STYLE, g_wndStyle & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME));
+        // Make the window borderless so that the client area can fill the screen.
+        SetWindowLong(hWnd, GWL_STYLE, g_wndStyle & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME));
 
 #if 0
-		// Get the settings of the primary display. We want the app to go into
-		// fullscreen mode on the display that supports Independent Flip.
-		DEVMODE devMode = {};
-		devMode.dmSize = sizeof(DEVMODE);
-		EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &devMode);
+        // Get the settings of the primary display. We want the app to go into
+        // fullscreen mode on the display that supports Independent Flip.
+        DEVMODE devMode = {};
+        devMode.dmSize = sizeof(DEVMODE);
+        EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &devMode);
 
-		SetWindowPos(
-			hWnd,
-			HWND_TOPMOST,
-			devMode.dmPosition.x,
-			devMode.dmPosition.y,
-			devMode.dmPosition.x + devMode.dmPelsWidth,
-			devMode.dmPosition.y + devMode.dmPelsHeight,
-			SWP_FRAMECHANGED | SWP_NOACTIVATE);
+        SetWindowPos(
+            hWnd,
+            HWND_TOPMOST,
+            devMode.dmPosition.x,
+            devMode.dmPosition.y,
+            devMode.dmPosition.x + devMode.dmPelsWidth,
+            devMode.dmPosition.y + devMode.dmPelsHeight,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE);
 #else
-		WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
-		MONITORINFO mi = { sizeof(mi) };
-		if (GetWindowPlacement(hWnd, &g_wpPrev) &&
-			GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi))
-		{
-			SetWindowPos(hWnd, HWND_TOP,
-				mi.rcMonitor.left, mi.rcMonitor.top,
-				mi.rcMonitor.right - mi.rcMonitor.left,
-				mi.rcMonitor.bottom - mi.rcMonitor.top,
-				SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-		}
+        WINDOWPLACEMENT g_wpPrev = {sizeof(g_wpPrev)};
+        MONITORINFO     mi       = {sizeof(mi)};
+        if (GetWindowPlacement(hWnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            SetWindowPos(hWnd,
+                         HWND_TOP,
+                         mi.rcMonitor.left,
+                         mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
 #endif
-		ShowWindow(hWnd, SW_MAXIMIZE);
+        ShowWindow(hWnd, SW_MAXIMIZE);
     }
 
     g_fullscreen = !g_fullscreen;
@@ -551,39 +545,39 @@ void ExitGame()
     PostQuitMessage(0);
 }
 
-SYSTEMTIME GetExpiryTime()
+const SYSTEMTIME* GetExpiryTime()
 {
     // Set this Time bomb to approximately one month after compilation.
-    SYSTEMTIME expiryTime = {};
-    expiryTime.wYear = 2018;
-    expiryTime.wMonth = 12;
-    expiryTime.wDay = 31;
+    static SYSTEMTIME expiryTime = {};
+    expiryTime.wYear             = 2018;
+    expiryTime.wMonth            = 12;
+    expiryTime.wDay              = 31;
 
-    return expiryTime;
+    return &expiryTime;
 }
 
 // Returns true if we have exceeded the date/time allowed for the app.
 bool CheckTimeBombExpired()
 {
-    SYSTEMTIME expiryTime = GetExpiryTime();
+    auto expiryTime = GetExpiryTime();
 
     // To compare times we must convert to FILETIME and then ULARGE_INTEGER
     FILETIME expiryFileTime = {};
-    BOOL ignored = SystemTimeToFileTime(&expiryTime, &expiryFileTime);
+    BOOL     ignored        = SystemTimeToFileTime(expiryTime, &expiryFileTime);
 
     ULARGE_INTEGER expiryULarge = {};
-    expiryULarge.HighPart = expiryFileTime.dwHighDateTime;
-    expiryULarge.LowPart = expiryFileTime.dwLowDateTime;
+    expiryULarge.HighPart       = expiryFileTime.dwHighDateTime;
+    expiryULarge.LowPart        = expiryFileTime.dwLowDateTime;
 
     SYSTEMTIME localTime = {};
     GetLocalTime(&localTime);
 
     FILETIME localFileTime = {};
-    ignored = SystemTimeToFileTime(&localTime, &localFileTime);
+    ignored                = SystemTimeToFileTime(&localTime, &localFileTime);
 
     ULARGE_INTEGER localULarge = {};
-    localULarge.HighPart = localFileTime.dwHighDateTime;
-    localULarge.LowPart = localFileTime.dwLowDateTime;
+    localULarge.HighPart       = localFileTime.dwHighDateTime;
+    localULarge.LowPart        = localFileTime.dwLowDateTime;
 
     if (localULarge.QuadPart >= expiryULarge.QuadPart)
     {

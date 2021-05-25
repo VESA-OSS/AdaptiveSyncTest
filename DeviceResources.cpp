@@ -1,12 +1,12 @@
-﻿//********************************************************* 
-// 
-// Copyright (c) Microsoft. All rights reserved. 
-// This code is licensed under the MIT License (MIT). 
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF 
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY 
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR 
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT. 
-// 
+﻿//*********************************************************
+//
+// Copyright (c) Microsoft. All rights reserved.
+// This code is licensed under the MIT License (MIT).
+// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
+// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
+// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
+// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
+//
 //*********************************************************
 
 #include "pch.h"
@@ -22,41 +22,42 @@ namespace
     // Check for SDK Layer support.
     inline bool SdkLayersAvailable()
     {
-        HRESULT hr = D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_NULL,       // There is no need to create a real hardware device.
-            0,
-            D3D11_CREATE_DEVICE_DEBUG,  // Check for the SDK layers.
-            nullptr,                    // Any feature level will do.
-            0,
-            D3D11_SDK_VERSION,
-            nullptr,                    // No need to keep the D3D device reference.
-            nullptr,                    // No need to know the feature level.
-            nullptr                     // No need to keep the D3D device context reference.
-            );
+        HRESULT hr = D3D11CreateDevice(nullptr,
+                                       D3D_DRIVER_TYPE_NULL,  // There is no need to create a real hardware device.
+                                       0,
+                                       D3D11_CREATE_DEVICE_DEBUG,  // Check for the SDK layers.
+                                       nullptr,                    // Any feature level will do.
+                                       0,
+                                       D3D11_SDK_VERSION,
+                                       nullptr,  // No need to keep the D3D device reference.
+                                       nullptr,  // No need to know the feature level.
+                                       nullptr   // No need to keep the D3D device context reference.
+        );
 
         return SUCCEEDED(hr);
     }
 #endif
-};
+};  // namespace
 
 // Constructor for DeviceResources.
-DX::DeviceResources::DeviceResources(
-    DXGI_FORMAT backBufferFormat,
-    DXGI_FORMAT depthBufferFormat,
-    UINT backBufferCount,
-    D3D_FEATURE_LEVEL minFeatureLevel) :
-    m_screenViewport{},
-    m_backBufferFormat(backBufferFormat),
-    m_depthBufferFormat(depthBufferFormat),
-    m_backBufferCount(backBufferCount),
-    m_window(0),
-    m_d3dFeatureLevel(D3D_FEATURE_LEVEL_9_1),
-    m_outputSize{ 0, 0, 1, 1 },
-    m_deviceNotify(nullptr),
-    m_dpi(-1.0f), // Require DPI to be explicitly set.
+DX::DeviceResources::DeviceResources(DXGI_FORMAT       backBufferFormat,
+                                     DXGI_FORMAT       depthBufferFormat,
+                                     UINT              backBufferCount,
+                                     D3D_FEATURE_LEVEL minFeatureLevel)
+    : m_screenViewport{}
+    , m_backBufferFormat(backBufferFormat)
+    , m_depthBufferFormat(depthBufferFormat)
+    , m_backBufferCount(backBufferCount)
+    , m_window(0)
+    , m_d3dFeatureLevel(D3D_FEATURE_LEVEL_9_1)
+    , m_outputSize{0, 0, 1, 1}
+    , m_deviceNotify(nullptr)
+    , m_dpi(-1.0f)
+    ,  // Require DPI to be explicitly set.
     m_vTotalMode(false)
 {
+    UNREFERENCED_PARAMETER(minFeatureLevel);
+
     CreateDeviceIndependentResources();
 }
 
@@ -73,37 +74,17 @@ void DX::DeviceResources::CreateDeviceIndependentResources()
 #endif
 
     // Initialize the Direct2D Factory.
-    DX::ThrowIfFailed(
-        D2D1CreateFactory(
-            D2D1_FACTORY_TYPE_SINGLE_THREADED,
-            __uuidof(ID2D1Factory5),
-            &options,
-            &m_d2dFactory
-        )
-    );
+    DX::ThrowIfFailed(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory5), &options, &m_d2dFactory));
 
     // Initialize the DirectWrite Factory.
-    DX::ThrowIfFailed(
-        DWriteCreateFactory(
-            DWRITE_FACTORY_TYPE_SHARED,
-            __uuidof(IDWriteFactory3),
-            &m_dwriteFactory
-        )
-    );
+    DX::ThrowIfFailed(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory3), &m_dwriteFactory));
 
     // Initialize the Windows Imaging Component (WIC) Factory.
-    DX::ThrowIfFailed(
-        CoCreateInstance(
-            CLSID_WICImagingFactory2,
-            nullptr,
-            CLSCTX_INPROC_SERVER,
-            IID_PPV_ARGS(&m_wicFactory)
-        )
-    );
+    DX::ThrowIfFailed(CoCreateInstance(CLSID_WICImagingFactory2, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_wicFactory)));
 }
 
 // Configures the Direct3D device, and stores handles to it and the device context.
-void DX::DeviceResources::CreateDeviceResources() 
+void DX::DeviceResources::CreateDeviceResources()
 {
     UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
@@ -120,8 +101,7 @@ void DX::DeviceResources::CreateDeviceResources()
 #endif
 
     // Determine DirectX hardware feature levels this app will support.
-    static const D3D_FEATURE_LEVEL s_featureLevels[] =
-    {
+    static const D3D_FEATURE_LEVEL s_featureLevels[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
         D3D_FEATURE_LEVEL_10_1,
@@ -133,29 +113,28 @@ void DX::DeviceResources::CreateDeviceResources()
 
     ComPtr<IDXGIAdapter1> adapter;
     GetHardwareAdapter(adapter.GetAddressOf());
-//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_MINIMUM_POWER, adapter.GetAddressOf());        // Can't find an output6/display off this device
-//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, adapter.GetAddressOf());
-//  GetPreferredAdapter( DXGI_GPU_PREFERENCE_UNSPECIFIED, adapter.GetAddressOf());
+    //  GetPreferredAdapter( DXGI_GPU_PREFERENCE_MINIMUM_POWER, adapter.GetAddressOf());        // Can't find an output6/display off this device
+    //  GetPreferredAdapter( DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, adapter.GetAddressOf());
+    //  GetPreferredAdapter( DXGI_GPU_PREFERENCE_UNSPECIFIED, adapter.GetAddressOf());
 
     // Create the Direct3D 11 API device object and a corresponding context.
-    ComPtr<ID3D11Device> device;
+    ComPtr<ID3D11Device>        device;
     ComPtr<ID3D11DeviceContext> context;
 
     HRESULT hr = E_FAIL;
     if (adapter)
     {
-        hr = D3D11CreateDevice(
-            adapter.Get(),
-            D3D_DRIVER_TYPE_UNKNOWN,
-            0,
-            creationFlags,
-            s_featureLevels,
-            ARRAYSIZE(s_featureLevels),
-            D3D11_SDK_VERSION,
-            &device,            // Returns the Direct3D device created.
-            &m_d3dFeatureLevel, // Returns feature level of device created.
-            &context            // Returns the device immediate context.
-            );
+        hr = D3D11CreateDevice(adapter.Get(),
+                               D3D_DRIVER_TYPE_UNKNOWN,
+                               0,
+                               creationFlags,
+                               s_featureLevels,
+                               ARRAYSIZE(s_featureLevels),
+                               D3D11_SDK_VERSION,
+                               &device,             // Returns the Direct3D device created.
+                               &m_d3dFeatureLevel,  // Returns feature level of device created.
+                               &context             // Returns the device immediate context.
+        );
     }
 #if defined(NDEBUG)
     else
@@ -166,20 +145,18 @@ void DX::DeviceResources::CreateDeviceResources()
     if (FAILED(hr))
     {
         // If the initialization fails, fall back to the WARP device.
-        // For more information on WARP, see: 
+        // For more information on WARP, see:
         // http://go.microsoft.com/fwlink/?LinkId=286690
-        DX::ThrowIfFailed(D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_WARP, // Create a WARP device instead of a hardware device.
-            0,
-            creationFlags,
-            s_featureLevels,
-            ARRAYSIZE(s_featureLevels),
-            D3D11_SDK_VERSION,
-            &device,
-            &m_d3dFeatureLevel,
-            &context
-            ));
+        DX::ThrowIfFailed(D3D11CreateDevice(nullptr,
+                                            D3D_DRIVER_TYPE_WARP,  // Create a WARP device instead of a hardware device.
+                                            0,
+                                            creationFlags,
+                                            s_featureLevels,
+                                            ARRAYSIZE(s_featureLevels),
+                                            D3D11_SDK_VERSION,
+                                            &device,
+                                            &m_d3dFeatureLevel,
+                                            &context));
 
         if (SUCCEEDED(hr))
         {
@@ -189,13 +166,9 @@ void DX::DeviceResources::CreateDeviceResources()
 #endif
 
     // Store pointers to the Direct3D 11.3 API device and immediate context.
-    DX::ThrowIfFailed(
-        device.As(&m_d3dDevice)
-        );
+    DX::ThrowIfFailed(device.As(&m_d3dDevice));
 
-    DX::ThrowIfFailed(
-        context.As(&m_d3dContext)
-        );
+    DX::ThrowIfFailed(context.As(&m_d3dContext));
 
 #ifndef NDEBUG
     ComPtr<ID3D11Debug> d3dDebug;
@@ -208,13 +181,12 @@ void DX::DeviceResources::CreateDeviceResources()
             d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true);
             d3dInfoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true);
 #endif
-            D3D11_MESSAGE_ID hide [] =
-            {
+            D3D11_MESSAGE_ID hide[] = {
                 D3D11_MESSAGE_ID_SETPRIVATEDATA_CHANGINGPARAMS,
             };
             D3D11_INFO_QUEUE_FILTER filter = {};
-            filter.DenyList.NumIDs = _countof(hide);
-            filter.DenyList.pIDList = hide;
+            filter.DenyList.NumIDs         = _countof(hide);
+            filter.DenyList.pIDList        = hide;
             d3dInfoQueue->AddStorageFilterEntries(&filter);
         }
     }
@@ -222,24 +194,15 @@ void DX::DeviceResources::CreateDeviceResources()
 
     // Create the Direct2D device object and a corresponding context.
     ComPtr<IDXGIDevice3> dxgiDevice;
-    DX::ThrowIfFailed(
-        m_d3dDevice.As(&dxgiDevice)
-    );
+    DX::ThrowIfFailed(m_d3dDevice.As(&dxgiDevice));
 
-    DX::ThrowIfFailed(
-        m_d2dFactory->CreateDevice(dxgiDevice.Get(), &m_d2dDevice)
-    );
+    DX::ThrowIfFailed(m_d2dFactory->CreateDevice(dxgiDevice.Get(), &m_d2dDevice));
 
-    DX::ThrowIfFailed(
-        m_d2dDevice->CreateDeviceContext(
-            D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-            &m_d2dContext
-        )
-    );
+    DX::ThrowIfFailed(m_d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_d2dContext));
 }
 
 // These resources need to be recreated every time the window size is changed.
-void DX::DeviceResources::CreateWindowSizeDependentResources() 
+void DX::DeviceResources::CreateWindowSizeDependentResources()
 {
     if (!m_window)
     {
@@ -255,44 +218,40 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
     m_d2dContext->SetTarget(nullptr);
     m_d2dTargetBitmap.Reset();
     m_depthStencil.Reset();
-    m_d3dContext->Flush(); // Why can't I call Flush1?
+    m_d3dContext->Flush();  // Why can't I call Flush1?
 
     // Determine the render target size in pixels.
-    UINT backBufferWidth = std::max<UINT>(m_outputSize.right - m_outputSize.left, 1);
+    UINT backBufferWidth  = std::max<UINT>(m_outputSize.right - m_outputSize.left, 1);
     UINT backBufferHeight = std::max<UINT>(m_outputSize.bottom - m_outputSize.top, 1);
 
-    UINT swapFlags = 0;     // Present Flags for swapchain resize call
+    UINT swapFlags = 0;  // Present Flags for swapchain resize call
     if (m_swapChain)
     {
-        if ( m_vTotalMode )     // if user is requesting V-TotalAverage to be FIXED
+        if (m_vTotalMode)  // if user is requesting V-TotalAverage to be FIXED
         {
             swapFlags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         }
         else
         {
             swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            //          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
         }
         // If the swap chain already exists, resize it.
-        HRESULT hr = m_swapChain->ResizeBuffers(
-            m_backBufferCount,
-            backBufferWidth,
-            backBufferHeight,
-            m_backBufferFormat,
-            swapFlags
-        );
+        HRESULT hr = m_swapChain->ResizeBuffers(m_backBufferCount, backBufferWidth, backBufferHeight, m_backBufferFormat, swapFlags);
 
         if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
         {
 #ifdef _DEBUG
             char buff[64] = {};
-            sprintf_s(buff, "Device Lost on ResizeBuffers: Reason code 0x%08X\n", (hr == DXGI_ERROR_DEVICE_REMOVED) ? m_d3dDevice->GetDeviceRemovedReason() : hr);
+            sprintf_s(buff,
+                      "Device Lost on ResizeBuffers: Reason code 0x%08X\n",
+                      (hr == DXGI_ERROR_DEVICE_REMOVED) ? m_d3dDevice->GetDeviceRemovedReason() : hr);
             OutputDebugStringA(buff);
 #endif
             // If the device was removed for any reason, a new device and swap chain will need to be created.
             HandleDeviceLost();
 
-            // Everything is set up now. Do not continue execution of this method. HandleDeviceLost will reenter this method 
+            // Everything is set up now. Do not continue execution of this method. HandleDeviceLost will reenter this method
             // and correctly set up the new device.
             return;
         }
@@ -307,54 +266,42 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
 
         // This sequence obtains the DXGI factory that was used to create the Direct3D device above.
         ComPtr<IDXGIDevice3> dxgiDevice;
-        DX::ThrowIfFailed(
-            m_d3dDevice.As(&dxgiDevice)
-            );
+        DX::ThrowIfFailed(m_d3dDevice.As(&dxgiDevice));
 
         ComPtr<IDXGIAdapter> dxgiAdapter;
-        DX::ThrowIfFailed(
-            dxgiDevice->GetAdapter(&dxgiAdapter)
-            );
+        DX::ThrowIfFailed(dxgiDevice->GetAdapter(&dxgiAdapter));
 
         ComPtr<IDXGIFactory4> dxgiFactory;
-        DX::ThrowIfFailed(
-            dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory))
-            );
+        DX::ThrowIfFailed(dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory)));
 
         // Requires DirectX 11.1 or later
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-        swapChainDesc.Width = backBufferWidth;
-        swapChainDesc.Height = backBufferHeight;
-        swapChainDesc.Format = m_backBufferFormat;
-        swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        swapChainDesc.BufferCount = m_backBufferCount;
-        swapChainDesc.SampleDesc.Count = 1;
-        swapChainDesc.SampleDesc.Quality = 0;
-        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-//      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        swapChainDesc.Width                 = backBufferWidth;
+        swapChainDesc.Height                = backBufferHeight;
+        swapChainDesc.Format                = m_backBufferFormat;
+        swapChainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        swapChainDesc.BufferCount           = m_backBufferCount;
+        swapChainDesc.SampleDesc.Count      = 1;
+        swapChainDesc.SampleDesc.Quality    = 0;
+        swapChainDesc.Scaling               = DXGI_SCALING_STRETCH;
+        swapChainDesc.SwapEffect            = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        //      swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-        if (m_vTotalMode)     // if user is requesting V-TotalAverage to be FIXED
+        if (m_vTotalMode)  // if user is requesting V-TotalAverage to be FIXED
         {
             swapFlags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         }
         else
         {
             swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            //          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
         }
         swapChainDesc.Flags = swapFlags;
- 
+
         // Create a SwapChain from a Win32 window.
         ComPtr<IDXGISwapChain1> swapChain1;
-        DX::ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
-            m_d3dDevice.Get(),
-            m_window,
-            &swapChainDesc,
-            nullptr,
-            nullptr,
-            swapChain1.ReleaseAndGetAddressOf()
-            ));
+        DX::ThrowIfFailed(
+            dxgiFactory->CreateSwapChainForHwnd(m_d3dDevice.Get(), m_window, &swapChainDesc, nullptr, nullptr, swapChain1.ReleaseAndGetAddressOf()));
 
         DX::ThrowIfFailed(swapChain1.As(&m_swapChain));
 
@@ -362,10 +309,10 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         DX::ThrowIfFailed(dxgiFactory->MakeWindowAssociation(m_window, DXGI_MWA_NO_ALT_ENTER));
     }
 
-    if (m_vTotalMode)     // if user is requesting V-TotalAverage to be FIXED
+    if (m_vTotalMode)  // if user is requesting V-TotalAverage to be FIXED
     {
         // swapchain is now created or resized
-        m_swapChain->SetMaximumFrameLatency(1);     // only valid in PresentDuration mode
+        m_swapChain->SetMaximumFrameLatency(1);  // only valid in PresentDuration mode
 
         // need to update latency handle when it changes like on swapchain create or resize.
         m_frameLatencyHandle = m_swapChain->GetFrameLatencyWaitableObject();
@@ -374,76 +321,47 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
     // Create a render target view of the swap chain back buffer.
     DX::ThrowIfFailed(m_swapChain->GetBuffer(0, IID_PPV_ARGS(m_renderTarget.ReleaseAndGetAddressOf())));
 
-    DX::ThrowIfFailed(m_d3dDevice->CreateRenderTargetView(
-        m_renderTarget.Get(),
-        nullptr,
-        m_d3dRenderTargetView.ReleaseAndGetAddressOf()
-        ));
+    DX::ThrowIfFailed(m_d3dDevice->CreateRenderTargetView(m_renderTarget.Get(), nullptr, m_d3dRenderTargetView.ReleaseAndGetAddressOf()));
 
     if (m_depthBufferFormat != DXGI_FORMAT_UNKNOWN)
     {
         // Create a depth stencil view for use with 3D rendering if needed.
-        CD3D11_TEXTURE2D_DESC depthStencilDesc(
-            m_depthBufferFormat,
-            backBufferWidth,
-            backBufferHeight,
-            1, // This depth stencil view has only one texture.
-            1, // Use a single mipmap level.
-            D3D11_BIND_DEPTH_STENCIL
-            );
+        CD3D11_TEXTURE2D_DESC depthStencilDesc(m_depthBufferFormat,
+                                               backBufferWidth,
+                                               backBufferHeight,
+                                               1,  // This depth stencil view has only one texture.
+                                               1,  // Use a single mipmap level.
+                                               D3D11_BIND_DEPTH_STENCIL);
 
-        DX::ThrowIfFailed(m_d3dDevice->CreateTexture2D(
-            &depthStencilDesc,
-            nullptr,
-            m_depthStencil.ReleaseAndGetAddressOf()
-            ));
+        DX::ThrowIfFailed(m_d3dDevice->CreateTexture2D(&depthStencilDesc, nullptr, m_depthStencil.ReleaseAndGetAddressOf()));
 
         CD3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc(D3D11_DSV_DIMENSION_TEXTURE2D);
-        DX::ThrowIfFailed(m_d3dDevice->CreateDepthStencilView(
-            m_depthStencil.Get(),
-            &depthStencilViewDesc,
-            m_d3dDepthStencilView.ReleaseAndGetAddressOf()
-            ));
-
+        DX::ThrowIfFailed(
+            m_d3dDevice->CreateDepthStencilView(m_depthStencil.Get(), &depthStencilViewDesc, m_d3dDepthStencilView.ReleaseAndGetAddressOf()));
     }
-    
+
     // Set the 3D rendering viewport to target the entire window.
-    m_screenViewport = CD3D11_VIEWPORT(
-        0.0f,
-        0.0f,
-        static_cast<float>(backBufferWidth),
-        static_cast<float>(backBufferHeight)
-        );
+    m_screenViewport = CD3D11_VIEWPORT(0.0f, 0.0f, static_cast<float>(backBufferWidth), static_cast<float>(backBufferHeight));
 
     m_d3dContext->RSSetViewports(1, &m_screenViewport);
 
     // Create a Direct2D target bitmap from the swapchain.
-    CD3D11_TEXTURE2D_DESC d2dTargetDesc(
-        m_backBufferFormat,
-        backBufferWidth,
-        backBufferHeight,
-        1, // Only one texture.
-        1, // Use a single mipmap level.
-        D3D11_BIND_RENDER_TARGET);
+    CD3D11_TEXTURE2D_DESC d2dTargetDesc(m_backBufferFormat,
+                                        backBufferWidth,
+                                        backBufferHeight,
+                                        1,  // Only one texture.
+                                        1,  // Use a single mipmap level.
+                                        D3D11_BIND_RENDER_TARGET);
 
-    D2D1_BITMAP_PROPERTIES1 bitmapProperties =
-        D2D1::BitmapProperties1(
-            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-            D2D1::PixelFormat(m_backBufferFormat, D2D1_ALPHA_MODE_PREMULTIPLIED),
-            m_dpi,
-            m_dpi
-        );
+    D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                                                                       D2D1::PixelFormat(m_backBufferFormat, D2D1_ALPHA_MODE_PREMULTIPLIED),
+                                                                       m_dpi,
+                                                                       m_dpi);
 
     ComPtr<IDXGISurface> targetDxgiSurface;
     DX::ThrowIfFailed(m_swapChain->GetBuffer(0, IID_PPV_ARGS(&targetDxgiSurface)));
 
-    DX::ThrowIfFailed(
-        m_d2dContext->CreateBitmapFromDxgiSurface(
-            targetDxgiSurface.Get(),
-            &bitmapProperties,
-            &m_d2dTargetBitmap
-        )
-    );
+    DX::ThrowIfFailed(m_d2dContext->CreateBitmapFromDxgiSurface(targetDxgiSurface.Get(), &bitmapProperties, &m_d2dTargetBitmap));
 
     m_d2dContext->SetTarget(m_d2dTargetBitmap.Get());
     m_d2dContext->SetDpi(m_dpi, m_dpi);
@@ -470,8 +388,8 @@ void DX::DeviceResources::SetWindow(HWND window, int width, int height)
     m_window = window;
 
     m_outputSize.left = m_outputSize.top = 0;
-    m_outputSize.right = width;
-    m_outputSize.bottom = height;
+    m_outputSize.right                   = width;
+    m_outputSize.bottom                  = height;
 }
 
 // This method is called when the Win32 window changes size
@@ -479,8 +397,8 @@ bool DX::DeviceResources::WindowSizeChanged(int width, int height)
 {
     RECT newRc;
     newRc.left = newRc.top = 0;
-    newRc.right = width;
-    newRc.bottom = height;
+    newRc.right            = width;
+    newRc.bottom           = height;
     if (newRc == m_outputSize)
     {
         return false;
@@ -535,7 +453,7 @@ void DX::DeviceResources::HandleDeviceLost()
 }
 
 // Present the contents of the swap chain to the screen.
-HRESULT DX::DeviceResources::Present( UINT syncInterval, UINT flags ) 
+HRESULT DX::DeviceResources::Present(UINT syncInterval, UINT flags)
 {
     // The first argument instructs DXGI to block until VSync, putting the application
     // to sleep until the next VSync. This ensures we don't waste any cycles rendering
@@ -545,9 +463,9 @@ HRESULT DX::DeviceResources::Present( UINT syncInterval, UINT flags )
     // flag when it is supported, even when presenting in windowed mode.
     // However, this flag cannot be used if the app is in fullscreen mode as a
     // result of calling SetFullscreenState.
-//  UINT presentFlags = (m_tearingSupport && m_windowedMode) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    HRESULT hr = m_swapChain->Present( syncInterval, flags );
- 
+    //  UINT presentFlags = (m_tearingSupport && m_windowedMode) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    HRESULT hr = m_swapChain->Present(syncInterval, flags);
+
     if (m_d3dContext)
     {
         // Discard the contents of the render target.
@@ -555,20 +473,21 @@ HRESULT DX::DeviceResources::Present( UINT syncInterval, UINT flags )
         // overwritten. If dirty or scroll rects are used, this call should be removed.
         m_d3dContext->DiscardView(m_d3dRenderTargetView.Get());
 
-        if(m_d3dDepthStencilView)
+        if (m_d3dDepthStencilView)
         {
             // Discard the contents of the depth stencil.
             m_d3dContext->DiscardView(m_d3dDepthStencilView.Get());
         }
     }
 
-    // If the device was removed either by a disconnection or a driver upgrade, we 
+    // If the device was removed either by a disconnection or a driver upgrade, we
     // must recreate all device resources.
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
     {
 #ifdef _DEBUG
         char buff[64] = {};
-        sprintf_s(buff, "Device Lost on Present: Reason code 0x%08X\n", (hr == DXGI_ERROR_DEVICE_REMOVED) ? m_d3dDevice->GetDeviceRemovedReason() : hr);
+        sprintf_s(
+            buff, "Device Lost on Present: Reason code 0x%08X\n", (hr == DXGI_ERROR_DEVICE_REMOVED) ? m_d3dDevice->GetDeviceRemovedReason() : hr);
         OutputDebugStringA(buff);
 #endif
         HandleDeviceLost();
@@ -591,7 +510,7 @@ void DX::DeviceResources::ChangeBackBufferFormat(DXGI_FORMAT fmt)
 
     switch (fmt)
     {
-    // Only support formats that Direct2D can use as a target.
+        // Only support formats that Direct2D can use as a target.
     case DXGI_FORMAT_R8G8B8A8_UNORM:
     case DXGI_FORMAT_R16G16B16A16_UNORM:
     case DXGI_FORMAT_R16G16B16A16_FLOAT:
@@ -641,7 +560,7 @@ void DX::DeviceResources::GetHardwareAdapter(IDXGIAdapter1** ppAdapter)
 
 // This method acquires the first available hardware adapter.
 // If no such adapter can be found, *ppAdapter will be set to nullptr.
-void DX::DeviceResources::GetPreferredAdapter( DXGI_GPU_PREFERENCE pref, IDXGIAdapter1** ppAdapter)
+void DX::DeviceResources::GetPreferredAdapter(DXGI_GPU_PREFERENCE pref, IDXGIAdapter1** ppAdapter)
 {
     *ppAdapter = nullptr;
 
@@ -649,7 +568,9 @@ void DX::DeviceResources::GetPreferredAdapter( DXGI_GPU_PREFERENCE pref, IDXGIAd
     DX::ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.GetAddressOf())));
 
     ComPtr<IDXGIAdapter1> adapter;
-    for (UINT adapterIndex = 0; DXGI_ERROR_NOT_FOUND != dxgiFactory->EnumAdapterByGpuPreference(adapterIndex, pref, IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf())); adapterIndex++)
+    for (UINT adapterIndex = 0;
+         DXGI_ERROR_NOT_FOUND != dxgiFactory->EnumAdapterByGpuPreference(adapterIndex, pref, IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
+         adapterIndex++)
     {
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
@@ -675,9 +596,5 @@ void DX::DeviceResources::GetPreferredAdapter( DXGI_GPU_PREFERENCE pref, IDXGIAd
 // Updates the (primarily Direct2D) DPI-dependent measurements.
 void DX::DeviceResources::UpdateLogicalSize(RECT outputSize, float dpi)
 {
-    m_logicalSize = {
-        0.0f,
-        0.0f,
-        outputSize.right * 96.0f / dpi,
-        outputSize.bottom * 96.0f / dpi };
+    m_logicalSize = {0.0f, 0.0f, outputSize.right * 96.0f / dpi, outputSize.bottom * 96.0f / dpi};
 }

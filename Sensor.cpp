@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2019-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * NVIDIA CORPORATION and its licensors retain all intellectual property
@@ -14,22 +14,22 @@
 #include <iostream>
 #include "Sensor.h"
 
-#define LS_CMD_QUERY_VERSION      1
-#define LS_CMD_STOP               3
-#define LS_CMD_LIGHT_INPUT        5
-#define LS_CMD_LATENCY           10         // wait for a click and then measure latency
-#define LS_CMD_BOOT_LOADER       13
-#define LS_CMD_LATENCY_AUTO_FIRE 14         // click the mouse and then measure latency
-#define LS_CMD_LATENCY_IMMEDIATE 15         // start measuring latency right away
+#define LS_CMD_QUERY_VERSION 1
+#define LS_CMD_STOP 3
+#define LS_CMD_LIGHT_INPUT 5
+#define LS_CMD_LATENCY 10  // wait for a click and then measure latency
+#define LS_CMD_BOOT_LOADER 13
+#define LS_CMD_LATENCY_AUTO_FIRE 14  // click the mouse and then measure latency
+#define LS_CMD_LATENCY_IMMEDIATE 15  // start measuring latency right away
 #define LS_CMD_SET_LUM_THRESHOLD 19
-#define LS_CMD_LATENCY_AUTO_FIRE_HID 24     // returns a time from when it sent a click event
-#define LS_CMD_READ_ADC          30
+#define LS_CMD_LATENCY_AUTO_FIRE_HID 24  // returns a time from when it sent a click event
+#define LS_CMD_READ_ADC 30
 
 const float CALIBRATION_SCALER = 5000.0f;
 
-#define FW_UPDATE_VERSION        14
-#define HW_SUPPORTED_VERSION      4
-#define SPM_PAGESIZE            128
+#define FW_UPDATE_VERSION 14
+#define HW_SUPPORTED_VERSION 4
+#define SPM_PAGESIZE 128
 
 Sensor::Sensor()
 {
@@ -66,16 +66,22 @@ void Sensor::StartLatencyMeasurement(ELatencyType type)
 {
     switch (type)
     {
-    case LatencyType_WaitForClick:  SendCommand(LS_CMD_LATENCY); break;
-    case LatencyType_AutoClick:     SendCommand(LS_CMD_LATENCY_AUTO_FIRE); break;
-    case LatencyType_Immediate:     SendCommand(LS_CMD_LATENCY_IMMEDIATE); break;
+    case LatencyType_WaitForClick:
+        SendCommand(LS_CMD_LATENCY);
+        break;
+    case LatencyType_AutoClick:
+        SendCommand(LS_CMD_LATENCY_AUTO_FIRE);
+        break;
+    case LatencyType_Immediate:
+        SendCommand(LS_CMD_LATENCY_IMMEDIATE);
+        break;
     }
 }
 
 float Sensor::ReadLatency()
 {
-    DWORD n = 0;
-    int rawLat = 0;
+    DWORD n      = 0;
+    int   rawLat = 0;
     while (hFile != INVALID_HANDLE_VALUE)
     {
         if (!ReadFile(hFile, &rawLat, 1, &n, NULL))
@@ -86,7 +92,7 @@ float Sensor::ReadLatency()
         }
         if (n)
         {
-            n = 0;
+            n       = 0;
             int msb = 0;
             Sleep(2);
             ReadFile(hFile, &msb, 1, &n, NULL);
@@ -125,7 +131,7 @@ float Sensor::ReadLuminance()
     SendCommand(LS_CMD_READ_ADC);
 
     int16_t v;
-    DWORD n = 0;
+    DWORD   n = 0;
     ReadFile(hFile, &v, 2, &n, NULL);
 
     return adcToNits * v;
@@ -136,7 +142,7 @@ void Sensor::SetActivationThreshold(float nits)
     uint16_t v;
 
     // convert from nits to raw adc values
-    v = (int)(nits / adcToNits + 0.5f);
+    v = static_cast<uint16_t>(nits / adcToNits + 0.5f);
 
     if (hwVer < 5)
     {
@@ -152,7 +158,7 @@ void Sensor::SetActivationThreshold(float nits)
 void Sensor::SendCommand(int cmd)
 {
     DWORD n = 0;
-    n = WriteFile(hFile, &cmd, 1, &n, NULL);
+    n       = WriteFile(hFile, &cmd, 1, &n, NULL);
 
     FlushFileBuffers(hFile);
 }
@@ -172,13 +178,7 @@ bool Sensor::Connect(int com)
     char portName[16];
 
     sprintf_s(portName, com > 9 ? "\\\\.\\COM%d" : "COM%d", com);
-    hFile = CreateFileA(static_cast<LPCSTR>(portName),
-        GENERIC_READ | GENERIC_WRITE,
-        0,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL);
+    hFile = CreateFileA(static_cast<LPCSTR>(portName), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
     {
         DWORD error = GetLastError();
@@ -194,7 +194,7 @@ bool Sensor::Connect(int com)
         return false;
     }
 
-    DCB dcb = { 0 };
+    DCB dcb = {0};
 
     if (!GetCommState(hFile, &dcb))
     {
@@ -203,10 +203,10 @@ bool Sensor::Connect(int com)
         return false;
     }
 
-    dcb.BaudRate = CBR_38400;
-    dcb.ByteSize = 8;
-    dcb.StopBits = ONESTOPBIT;
-    dcb.Parity = ODDPARITY;
+    dcb.BaudRate    = CBR_38400;
+    dcb.ByteSize    = 8;
+    dcb.StopBits    = ONESTOPBIT;
+    dcb.Parity      = ODDPARITY;
     dcb.fDtrControl = DTR_CONTROL_DISABLE;
 
     if (!SetCommState(hFile, &dcb))
@@ -234,11 +234,11 @@ bool Sensor::Connect(int com)
 void Sensor::SetTimeOuts(int v)
 {
     COMMTIMEOUTS timeouts;
-    timeouts.ReadIntervalTimeout = v;
-    timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = v;
+    timeouts.ReadIntervalTimeout         = v;
+    timeouts.ReadTotalTimeoutMultiplier  = 0;
+    timeouts.ReadTotalTimeoutConstant    = v;
     timeouts.WriteTotalTimeoutMultiplier = 0;
-    timeouts.WriteTotalTimeoutConstant = v;
+    timeouts.WriteTotalTimeoutConstant   = v;
     if (!SetCommTimeouts(hFile, &timeouts))
     {
         puts("Could not set the COM timeouts.");
@@ -373,12 +373,12 @@ bool Sensor::QueryVersion()
     SendCommand(LS_CMD_QUERY_VERSION);
 
     uint32_t deviceVer;
-    DWORD n = 0;
+    DWORD    n = 0;
     ReadFile(hFile, &deviceVer, sizeof(deviceVer), &n, NULL);
 
     if (n == 4 && (deviceVer & 0xFF) == 0xF0)
     {
-        bool hasCalibration = false;
+        //         bool hasCalibration = false;
 
         devId = (deviceVer >> 8) & 0xFF;
         hwVer = (deviceVer >> 16) & 0xFF;
@@ -386,8 +386,8 @@ bool Sensor::QueryVersion()
 
         printf("LDAT HW: %d, FW: %d, Dev ID: %d\n", hwVer, fwVer, devId);
 
-        unsigned int cal = 0;
-        int16_t offset = 0;
+        unsigned int cal    = 0;
+        int16_t      offset = 0;
 
         ReadFile(hFile, &cal, 2, &n, NULL);
         if (cal > 0 && cal != 0xFFFF)
@@ -395,7 +395,7 @@ bool Sensor::QueryVersion()
             if (hwVer < 5)
             {
                 const float REF_NITS = 335;
-                adcToNits = REF_NITS * (16.0f / cal);
+                adcToNits            = REF_NITS * (16.0f / cal);
             }
             else
             {
@@ -409,7 +409,6 @@ bool Sensor::QueryVersion()
 
         n = hwVer >= 5 ? 2 : 1;
         ReadFile(hFile, &offset, n, &n, NULL);
-
 
         return true;
     }
