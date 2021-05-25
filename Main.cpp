@@ -328,7 +328,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         // Handle keyboard inputs;
         // https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-    case WM_KEYDOWN:
+    case WM_KEYDOWN:                    // all down keystrokes will have auto repeat auto-repeat autorepeat
         switch (wParam)
         {
         case VK_SHIFT:
@@ -341,9 +341,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case VK_UP:
             game->ChangeSubtest(+1);
             break;
+
+        case VK_OEM_PLUS:
+            game->ChangeG2GInterval(+1);        // process +/- keys
+            break;
+        case VK_OEM_MINUS:
+            game->ChangeG2GInterval(-1);       // process +/- keys
+            break;
         }
         break;
-
 
     case WM_KEYUP:
         switch (wParam)
@@ -381,13 +387,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
         case VK_OEM_6:                                  // right square bracket ]
             game->ChangeG2GToIndex(+1);
-            break;
-
-        case VK_OEM_PLUS:
-            game->ChangeG2GInterval(+1);
-            break;
-        case VK_OEM_MINUS:
-            game->ChangeG2GInterval(-1);
             break;
 
         case VK_ESCAPE:         // Youtube compat

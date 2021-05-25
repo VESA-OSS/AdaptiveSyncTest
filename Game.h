@@ -21,6 +21,8 @@
 #include <winrt\Windows.Devices.Display.Core.h>
 #include <winrt\Windows.Devices.Enumeration.h>
 
+#define TAU 6.283185307179586476925286766559
+
 struct rawOutputDesc
 {
 	float MaxLuminance;
@@ -400,7 +402,9 @@ private:
 
     INT32                       m_waveCounter;              // control for square wave                          3
     WaveEnum                    m_waveEnum;                 // zigzag vs square wave vs random                  3
-    bool                        m_waveUp;                   // zig up or down
+    bool                        m_waveUp;                   // zig up or down                                   3
+    double                      m_waveAngle;                // how far along we are in the sine wave            3
+    INT32                       m_waveInterval;             // period of these waveforms                        3
 
     INT32                       m_latencyRateIndex;         // select frame rate in frame latency test          4
     double                      m_latencyTestFrameRate;     // frame rate specific to this test pattern         4

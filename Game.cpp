@@ -9,7 +9,7 @@
 // 
 //*********************************************************
 
-#define versionString L"v0.93"
+#define versionString L"v0.931"
 
 #include "pch.h"
 
@@ -76,10 +76,13 @@ void Game::ConstructorInternal()
     m_color = 0.f;              // black by default
 
     m_currentTest = TestPattern::StartOfTest;
+
     m_flickerRateIndex = 0;		// select between min, max, etc for Flicker test                    2
     m_waveCounter = SQUARE_COUNT;
     m_waveEnum = WaveEnum::ZigZag; // default                                                       3
     m_waveUp = true;            // for use in zigzag wave                                           3
+    m_waveAngle = 0.;           // how far along we are in the sine wave                            3
+    m_waveInterval = 360;       // duration of sine wave period in frames                           3
 
     m_latencyRateIndex = 0;		// select between 60, 90, 120, 180, 240Hz for Latency tests         4
     m_mediaRateIndex   = 0;		// select between 60, 90, 120, 180, 240Hz for Jitter                5
@@ -709,16 +712,42 @@ void Game::Tick()
             // make sure FrameTime is up to date (should not be a member var)
             m_targetFrameTime = 1.0 / m_targetFrameRate;
 
+            // default to no app frame-doubling
+            m_mediaVsyncCount = 1;
 
             // use PresentDuration mode in some tests
             UINT closestSmallerDuration = 0, closestLargerDuration = 0;
             if ( m_currentTest == TestPattern::FlickerConstant                                  // 2
 //            || m_currentTest == TestPattern::FlickerVariable                                  // 3
               || m_currentTest == TestPattern::DisplayLatency                                   // 4
-              || m_currentTest == TestPattern::FrameLock )                                      // 7
+              || m_currentTest == TestPattern::FrameLock                                        // 7
+              || m_currentTest == TestPattern::MotionBlur )                                     // 8
             {
                 m_mediaVsyncCount = 1;
                 m_mediaPresentDuration = 10000000*m_targetFrameTime;
+
+#define NEW_WAY
+#ifdef NEW_WAY
+                // compute a new presentDuration that is below the max supported by the display
+                INT64 newDuration = m_mediaPresentDuration;
+                INT64 maxDuration = (m_maxDuration * 1002) / 1000;          // apply some padding
+                if (newDuration > maxDuration)                              // try doubling frame rate
+                {
+                    newDuration = m_mediaPresentDuration/2;
+                    m_mediaVsyncCount = 2;
+                }
+                if (newDuration > maxDuration)                              // if that wasn't enough, try tripling
+                {
+                    newDuration = m_mediaPresentDuration/3;
+                    m_mediaVsyncCount = 3;
+                }
+                if (newDuration > maxDuration)                              // if that wasn't enough, try quadrupling
+                {
+                    newDuration = m_mediaPresentDuration/4;
+                    m_mediaVsyncCount = 4;
+                }
+                m_mediaPresentDuration = newDuration;
+#else
                 switch (m_mediaPresentDuration)
                 {
                     //23.976
@@ -777,6 +806,7 @@ void Game::Tick()
                 default:                                // we are not using PresentDuration (FAVT) mode at all
                     break;
                 }
+#endif // NEW_WAY
 
                 hr = scMedia->CheckPresentDurationSupport( m_mediaPresentDuration,
                         &closestSmallerDuration, &closestLargerDuration );
@@ -1079,9 +1109,13 @@ void Game::UpdateFlickerVariable()
         {
             double amplitude = 0.5 * (maxFrameRate - m_minFrameRate);
             double baseline = 0.5 * (maxFrameRate + m_minFrameRate);
-            double angle = m_totalTimeSinceStart * M_PI/3.0;         // 60deg/sec = period of 6s
+//          double angle = m_totalTimeSinceStart * M_PI/3.0;            // 60deg/sec = period of 6s
+//          period is (waveinterval) 360 frames per cycle
+//          frequency is 1/360th of a cycle per frame
+            m_waveAngle += TAU / (double)m_waveInterval;
+            m_waveAngle = fmod( m_waveAngle, TAU );                 // wrap to be nice to sin()
 
-            m_targetFrameRate = amplitude * sin(angle) + baseline;
+            m_targetFrameRate = amplitude * sin( m_waveAngle ) + baseline;
         }
         break;
 
@@ -1381,17 +1415,24 @@ void Game::ChangeG2GToIndex( INT32 increment)
     m_g2gToIndex = wrap(m_g2gToIndex, 0, numGtGValues-1 );
 }
 
-// routines to handle the g2g frame skip factor and motionblur level (currently on +/- keys)
+// routines to handle the +/- keys  -currently sineWave period, g2g frame skip factor, and motionblur level
 void Game::ChangeG2GInterval(INT32 increment)
 {
     switch (m_currentTest)
     {
-    case TestPattern::GrayToGray:
+    case TestPattern::FlickerVariable:                                              // 3
+        if (m_shiftKey)
+            increment *= 10;
+        m_waveInterval += increment;
+        m_waveInterval = clamp(m_waveInterval, 1, 3600);
+        break;
+
+    case TestPattern::GrayToGray:                                                   // 5
         m_g2gInterval += increment;
         m_g2gInterval = clamp(m_g2gInterval, 1, 90);
         break;
 
-    case TestPattern::MotionBlur:
+    case TestPattern::MotionBlur:                                                   // 8
         m_MotionBlurIndex += increment;
         if (m_MotionBlurIndex > maxMotionBlurs + 3)
             m_MotionBlurIndex = 0;
@@ -2128,7 +2169,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)			     
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << m_targetFrameTime * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
         double avgFrameTime = m_totalFrameTime / m_frameCount;
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -2241,7 +2282,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				    
             title << L"-Random\n";
             break;
         case WaveEnum::SineWave:
-            title << L"-Sine Wave\n";
+            title << L"-Sine Wave " << m_waveInterval << "frames \n";
             break;
         case WaveEnum::Max:
             title << L"-Maximum\n";
@@ -2290,6 +2331,8 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)				    
 
         title << L"Adjust luminance to 40nits using UI slider or OSD\n";
 		title << L"Select zigzag vs square wave etc using Up/Down arrows\n";
+        if (m_waveEnum == WaveEnum::SineWave )
+            title << L"Adjust period of sine wave using +/- keys\n";
         title << m_hideTextString;
 
 		RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect);
@@ -3138,7 +3181,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
         double avgFrameTime = m_totalFrameTime / m_frameCount;
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -3156,11 +3199,15 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2 * ctx)	            
         {
             if (m_vTotalFixedApproved)
             {
-                title << "V-Total: Fixed\n";
+                title << "V-Total: Fixed\n";                        // green -got presentDuration 
+            }
+            else if (m_MPO)
+            {
+                title << "MPO Overlay\n";                           // blue  -just an overlay
             }
             else
             {
-                title << "V-Total: Adaptive\n";
+                title << "V-Total: Adaptive\n";                     // red   -none of the above
             }
         }
         else
@@ -3264,7 +3311,7 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
         title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
@@ -3272,6 +3319,26 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)             
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
         title << L"\nSelect frame rate using Up/Down arrows\n";
         title << L"Select Frame Fraction using +/- keys\n";
+
+        // display V-Total mode if requested
+        if (m_vTotalModeRequested == VTotalMode::Fixed)
+        {
+            if (m_vTotalFixedApproved)
+            {
+                title << "V-Total: Fixed\n";                        // green -got presentDuration 
+            }
+            else if (m_MPO)
+            {
+                title << "MPO Overlay\n";                           // blue  -just an overlay
+            }
+            else
+            {
+                title << "V-Total: Adaptive\n";                     // red   -none of the above
+            }
+        }
+        else
+            title << L"\n";
+
         if (m_logging)
             title << L"Logging\n";
         title << m_hideTextString;
