@@ -1,5 +1,6 @@
 BasedOnStyle: Google
 IndentWidth: 4
+UseTab: Always
 ColumnLimit: 150
 
 Language: Cpp

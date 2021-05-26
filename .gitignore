@@ -31,7 +31,6 @@
 # VS folders of binaries
 /x64/
 .gitusers
-
-/AdaptSyncTestTrace001.csv
-/AdaptSyncTest2_FlickerConst001.csv
-/AdaptSyncTest3_FlickerVar001.csv
+# Excel data files
+*.csv
+*.xlsx

@@ -377,9 +377,10 @@ class Game : public DX::IDeviceNotify
     double   m_totalTimeSinceStart;   // not sure if I need this?
     double   m_testTimeRemainingSec;  // how long current test has been running in seconds
     uint64_t m_frameCounter;          // how many frames rendered in app since swapchain create
-    //  uint64_t                    m_presentCounter;           // how many frames the driver has Presented since swapchain create
+//  uint64_t   m_presentCounter;       // how many frames the driver has Presented since swapchain create
     double     m_targetFrameRate;       // frame rate we want to achieve
     double     m_targetFrameTime;       // duration of the frame being presented
+    double     m_lastTargetFrameTime;   // save this from last frame as it may match current time
     bool       m_vTotalFixedSupported;  // this monitor/GPU supports PresentDuration timings
     VTotalMode m_vTotalModeRequested;   // UI requests either Fixed frame rate vs Adaptive (g-sync)
     bool       m_vTotalFixedApproved;   // config has approved use of V-Total Fixed
@@ -394,8 +395,8 @@ class Game : public DX::IDeviceNotify
     double m_FrameRateRatio;  // ratio of above min to max available in adaptive sync
     double m_OSFrameRate;     // Advanced Display Settings (upper limit for AdaptSync)
 
-    UINT m_minDuration;  // min frame time for Fixed V-Total mode
-    UINT m_maxDuration;  // max frame time for Fixed V-Total mode
+    UINT m_minDuration;     // min frame time for Fixed V-Total mode
+    UINT m_maxDuration;     // max frame time for Fixed V-Total mode
 
     INT32 m_flickerRateIndex;  // select frame rate in flicker test                2
 

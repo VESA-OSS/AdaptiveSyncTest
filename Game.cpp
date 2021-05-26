@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.931"
+#define versionString L"v0.934"
 
 #include "pch.h"
 
@@ -78,25 +78,25 @@ void Game::ConstructorInternal()
 
     m_flickerRateIndex = 0;  // select between min, max, etc for Flicker test                    2
     m_waveCounter      = SQUARE_COUNT;
-    m_waveEnum         = WaveEnum::ZigZag;  // default                                                       3
-    m_waveUp           = true;              // for use in zigzag wave                                           3
-    m_waveAngle        = 0.;                // how far along we are in the sine wave                            3
-    m_waveInterval     = 360;               // duration of sine wave period in frames                           3
+    m_waveEnum         = WaveEnum::ZigZag;  // default                                           3
+    m_waveUp           = true;              // for use in zigzag wave                            3
+    m_waveAngle        = 0.;                // how far along we are in the sine wave             3
+    m_waveInterval     = 360;               // duration of sine wave period in frames            3
 
     m_latencyRateIndex = 0;  // select between 60, 90, 120, 180, 240Hz for Latency tests         4
     m_mediaRateIndex   = 0;  // select between 60, 90, 120, 180, 240Hz for Jitter                5
 
-    m_latencyTestFrameRate = 1;      // Flag for default to max                                          4
+    m_latencyTestFrameRate = 1;      // Flag for default to max                                  4
     m_sensorConnected      = false;  //
-    m_sensorNits           = 27.0f;  // threshold for detection by sensor in nits                        4
+    m_sensorNits           = 27.0f;  // threshold for detection by sensor in nits                4
     m_sensing              = false;  //
-    m_flash                = false;  // whether we are flashing the photocell this frame                 4
-    m_lastFlash            = false;  // whether last frame was a flash                                   4
-    m_lastLastFlash        = false;  // whether last frame was a flash                                   4
-    ResetSensorStats();              // initialize the sensor tracking data                              4
+    m_flash                = false;  // whether we are flashing the photocell this frame         4
+    m_lastFlash            = false;  // whether last frame was a flash                           4
+    m_lastLastFlash        = false;  // whether last frame was a flash                           4
+    ResetSensorStats();              // initialize the sensor tracking data                      4
     ResetFrameStats();               // initialize the frame timing data
     m_avgInputTime = 0.006;          // hard coded at 6ms until dongle can drive input
-#define USB_TIME (0.002)             // time for 1 round trip on USB wire       2ms?                     4
+#define USB_TIME (0.002)             // time for 1 round trip on USB wire       2ms?             4
 
     m_autoG2G      = false;  // if we are in automatic sequence mode                             5
     m_g2gFrom      = true;   // start with "From" color                                          5
@@ -104,18 +104,19 @@ void Game::ConstructorInternal()
     m_g2gToIndex   = 0;      // subtest for Gray To Gray test                                    5
     m_g2gFrameRate = 1;      // flag for default to max                                          5
     m_g2gCounter   = 0;      // counter for interval of gray periods                             5
-    m_g2gInterval  = 15;     // default interval for G2G switching                               5
+    m_g2gInterval  = 16;     // default interval for G2G switching                               5
 
-    m_frameDropRateEnum    = DropRateEnum::Max;  // default to max                                   6
-    m_frameLockRateIndex   = 0;                  // select sutbtest for frameDrop test                               7
-    m_MotionBlurIndex      = maxMotionBlurs;     // start with frame fraction 100%                          8
-    m_motionBlurFrameRate  = 60.;                //                                                                  8
-    m_judderTestFrameRate  = 1.;                 // flag for default to max                                          9
-    m_fAngle               = 0;                  // angle of object moving around screen                             8,9
-    m_tearingTestFrameRate = 1;                  // flag for default to max                                          0
-    m_sweepPos             = 0;                  // position of bar in Tearing test                                  0
+    m_frameDropRateEnum    = DropRateEnum::Max;  // default to max                               6
+    m_frameLockRateIndex   = 0;                  // select sutbtest for frameDrop test           7
+    m_MotionBlurIndex      = maxMotionBlurs;     // start with frame fraction 100%               8
+    m_motionBlurFrameRate  = 60.;                //                                              8
+    m_judderTestFrameRate  = 1.;                 // flag for default to max                      9
+    m_fAngle               = 0;                  // angle of object moving around screen         8,9
+    m_tearingTestFrameRate = 1;                  // flag for default to max                      0
+    m_sweepPos             = 0;                  // position of bar in Tearing test              0
 
     m_targetFrameRate = 60.f;
+    m_lastTargetFrameTime = 0;
     m_frameTime       = 0.016666;
     m_lastFrameTime   = 0.016666;
     m_sleepDelay      = 16.0;   // ms simulate workload of app (just used for some tests)
@@ -350,11 +351,18 @@ bool Game::CheckForDefaults()
 {
     return (
         // Default SDR display values (RS2)
-        (270.0f == m_rawOutDesc.MaxLuminance && 270.0f == m_rawOutDesc.MaxFullFrameLuminance && 0.5f == m_rawOutDesc.MinLuminance) ||
+        (270.0f == m_rawOutDesc.MaxLuminance &&
+         270.0f == m_rawOutDesc.MaxFullFrameLuminance &&
+           0.5f == m_rawOutDesc.MinLuminance) ||
         // Default HDR display values (RS2)
-        (550.0f == m_rawOutDesc.MaxLuminance && 450.0f == m_rawOutDesc.MaxFullFrameLuminance && 0.5f == m_rawOutDesc.MinLuminance) ||
+        (550.0f == m_rawOutDesc.MaxLuminance &&
+         450.0f == m_rawOutDesc.MaxFullFrameLuminance &&
+           0.5f == m_rawOutDesc.MinLuminance) ||
         // Default HDR display values (RS3)
-        (1499.0f == m_rawOutDesc.MaxLuminance && 799.0f == m_rawOutDesc.MaxFullFrameLuminance && 0.01f == m_rawOutDesc.MinLuminance));
+        (1499.0f == m_rawOutDesc.MaxLuminance &&
+          799.0f == m_rawOutDesc.MaxFullFrameLuminance &&
+           0.01f == m_rawOutDesc.MinLuminance)
+        );
 }
 
 // Default to tier based on what the EDID specified
@@ -535,7 +543,7 @@ HANDLE Game::GetFrameLatencyHandle()
 void Game::LogFrameStats()
 {
     // poll frame stats to see if we have newer data
-    auto                  sc = m_deviceResources->GetSwapChain();
+    auto sc = m_deviceResources->GetSwapChain();
     DXGI_FRAME_STATISTICS frameStats;
     sc->GetFrameStatistics(&frameStats);
 
@@ -556,12 +564,12 @@ void Game::LogFrameStats()
 void Game::Tick()
 {
     HRESULT hr = 0;
-    //     double  frameTime;                                                  // local variable for comparison
-    double dFrequency = static_cast<double>(m_qpcFrequency.QuadPart);  // counts per second of QPC
+//  double  frameTime;                                                  // local variable for comparison
+    double dFrequency = static_cast<double>(m_qpcFrequency.QuadPart);   // counts per second of QPC
 
     // Update with data from last frame
     // get sync time of last frame from swapchain
-    auto                  sc = m_deviceResources->GetSwapChain();
+    auto sc = m_deviceResources->GetSwapChain();
     DXGI_FRAME_STATISTICS frameStats;
     sc->GetFrameStatistics(&frameStats);
     m_frameLog[1]->syncCounts = frameStats.SyncQPCTime.QuadPart;
@@ -644,8 +652,8 @@ void Game::Tick()
             m_frameLog[0]->presentCounts = getPerfCounts();
 
             // Show the new frame
-            //             UINT syncInterval = 0;
-            //             UINT presentFlags;
+//          UINT syncInterval = 0;
+//          UINT presentFlags;
 
             if (m_mediaPresentDuration != 0)
             {
@@ -653,8 +661,7 @@ void Game::Tick()
             }
             else
             {
-                //              hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
-                hr = m_deviceResources->Present(0, 0);
+                hr = m_deviceResources->Present(0, 0);                      // default is V-Sync enabled, not tearing
             }
 
             // if this was a frame that included a flash, then read the photocell's measurement
@@ -684,8 +691,7 @@ void Game::Tick()
                         m_maxSensorTime = m_sensorTime;
                 }
             }
-
-            //            else   // we are not flashing so just wait for the flip queue to update with the black frame
+//          else   // we are not flashing so just wait for the flip queue to update with the black frame
 
             // make sure each frame lasts long enough for the sensor to detect it.
             Sleep(2);
@@ -727,7 +733,7 @@ void Game::Tick()
             // use PresentDuration mode in some tests
             UINT closestSmallerDuration = 0, closestLargerDuration = 0;
             if (m_currentTest == TestPattern::FlickerConstant  // 2
-                //            || m_currentTest == TestPattern::FlickerVariable                                  // 3
+  //            || m_currentTest == TestPattern::FlickerVariable                                  // 3
                 || m_currentTest == TestPattern::DisplayLatency  // 4
                 || m_currentTest == TestPattern::FrameLock       // 7
                 || m_currentTest == TestPattern::MotionBlur)     // 8
@@ -881,8 +887,7 @@ void Game::Tick()
             }
             else
             {
-                hr = m_deviceResources->Present(0, DXGI_PRESENT_ALLOW_TEARING);
-                //              hr = m_deviceResources->Present(0, 0 );
+                hr = m_deviceResources->Present(0, 0);                  // default is V-Sync enabled
             }
 
             // log time when vsync happens on display
@@ -893,7 +898,7 @@ void Game::Tick()
 
             // track frame time for frame rate
             m_lastFrameTime = m_frameTime;
-            m_frameTime     = (m_frameLog[0]->readCounts - m_lastReadCounts) / dFrequency;
+            m_frameTime = (m_frameLog[0]->readCounts - m_lastReadCounts) / dFrequency;
 
             m_lastReadCounts = m_frameLog[0]->readCounts;
 
@@ -915,7 +920,7 @@ void Game::Tick()
                     m_maxLatency = m_frameTime;
 #endif
                 // accumulate Running time for computing Average and Variance
-                double sleepTime   = (m_frameLog[0]->updateCounts - m_frameLog[0]->sleepCounts) / dFrequency;
+                double sleepTime  = (m_frameLog[0]->updateCounts - m_frameLog[0]->sleepCounts) / dFrequency;
                 double runningTime = m_frameTime - sleepTime;  // all the time last frame not sleeping
                 m_totalRunningTime += runningTime;
                 m_totalRunningTime2 += runningTime * runningTime;
@@ -946,6 +951,7 @@ void Game::Tick()
     // track data since app startup
     m_totalTimeSinceStart += m_frameTime;  // TODO totalTime should not be a double but a uint64 in microseconds
 
+    m_lastTargetFrameTime = m_targetFrameTime;
     m_lastLogTime = m_logTime;  // save last value
     m_logTime += m_frameTime;   // time since logging started
 }
@@ -1093,11 +1099,12 @@ void Game::UpdateFlickerVariable()
     }
     break;
 
-    case WaveEnum::SquareWave: {
+    case WaveEnum::SquareWave:
+    {
         if (m_waveUp)
-            m_targetFrameRate = maxFrameRate;
+            m_targetFrameRate = maxFrameRate - 4;
         else
-            m_targetFrameRate = m_minFrameRate;
+            m_targetFrameRate = m_minFrameRate + 2;
 
         m_waveCounter--;
         if (m_waveCounter <= 0)
@@ -1108,23 +1115,27 @@ void Game::UpdateFlickerVariable()
     }
     break;
 
-    case WaveEnum::Random: {
-        double range      = maxFrameRate - m_minFrameRate;
-        m_targetFrameRate = m_minFrameRate + range * rand() / RAND_MAX;
+    case WaveEnum::Random:
+    {
+        double base = m_minFrameRate + 2;
+        double range = maxFrameRate - 2 - base;
+        m_targetFrameRate = base + range*rand()/RAND_MAX;
         // TODO clamp max delta from current frame rate to some limit?s
     }
     break;
 
-    case WaveEnum::SineWave: {
-        double amplitude = 0.5 * (maxFrameRate - m_minFrameRate);
-        double baseline  = 0.5 * (maxFrameRate + m_minFrameRate);
-        //          double angle = m_totalTimeSinceStart * M_PI/3.0;            // 60deg/sec = period of 6s
-        //          period is (waveinterval) 360 frames per cycle
-        //          frequency is 1/360th of a cycle per frame
+    case WaveEnum::SineWave:
+    {
+        double base  = 0.5 * (maxFrameRate + m_minFrameRate);
+        double range = 0.5 * (maxFrameRate - m_minFrameRate);
+
+//      double angle = m_totalTimeSinceStart * M_PI/3.0;            // 60deg/sec = period of 6s
+        // period is (waveinterval) 360 frames per cycle
+        // frequency is 1/360th of a cycle per frame
         m_waveAngle += TAU / (double)m_waveInterval;
         m_waveAngle = fmod(m_waveAngle, TAU);  // wrap to be nice to sin()
 
-        m_targetFrameRate = amplitude * sin(m_waveAngle) + baseline;
+        m_targetFrameRate = base + range*sin( m_waveAngle );
     }
     break;
 
@@ -1143,10 +1154,10 @@ float Game::GrayToGrayValue(INT32 index)
 
     if (!CheckHDR_On())  // SDR case
     {
-        double fDelta = 1.0f / (numGtGValues - 1);
-        double d      = fDelta * index;                   // proportion of the range
-        c             = static_cast<float>(pow(d, 2.2));  // apply gamma
-                                                          //      c = d * m_outputDesc.MaxLuminance;          // scale to peak luminance
+        float fDelta = 1.0f/(numGtGValues - 1);
+        c = fDelta*index;                           // proportion of the range
+        c = RemoveSRGBCurve( c );                   // remove gamma
+//      c = d * m_outputDesc.MaxLuminance;          // scale to peak luminance
     }
     else  // HDR case:
     {
@@ -1178,14 +1189,14 @@ void Game::UpdateGrayToGray()
 {
     if (m_autoG2G)  // if we are in auto-sequence
     {
-        /*
-                update the timer
-                if it has run down, then
-                    Toggle the m_from boolean
-                    If we are back at true, then
-                    Increment the FromIndex
-                        if that overflows, increment the ToIndex
-        */
+/*
+        update the timer
+        if it has run down, then
+            Toggle the m_from boolean
+            If we are back at true, then
+            Increment the FromIndex
+                if that overflows, increment the ToIndex
+*/
         //      m_testTimeRemainingSec -= m_frameTime;
         if (m_g2gCounter <= 0)  // counter ran down, so change something
         {
@@ -1209,6 +1220,8 @@ void Game::UpdateGrayToGray()
             if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))  // skip the diagonal where to and from are same
             {
                 m_g2gCounter = static_cast<int32_t>(0.25 * m_targetFrameRate);  // reset counter to take 250ms at ANY frame rate
+                if (m_g2gCounter & 0x01)        // if it is odd,
+                    m_g2gCounter--;             // subtract one to make it even
             }
             //              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;
         }
@@ -1217,11 +1230,11 @@ void Game::UpdateGrayToGray()
     }
     else  // we are in manual state setting mode (not auto sequence)
     {
-        //      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
-        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
-        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
-        //      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
-        //      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
+//      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
+//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
+//      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
+//      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
 
         if (m_g2gCounter <= 0)
         {
@@ -1269,16 +1282,17 @@ void Game::UpdateFrameDrop()
     switch (m_frameDropRateEnum)
     {
     case DropRateEnum::Max:
-        m_targetFrameRate = m_maxFrameRate;  // max reported by implementation
+        m_targetFrameRate = m_maxFrameRate;     // max reported by implementation
         break;
-    case DropRateEnum::Random:                  // stress test alternating between 24 and max
-        if (((float)rand() / RAND_MAX) > 0.50)  // randomly choose between Min and Max
+    case DropRateEnum::Random:                  // pick a random frame duration within the valid range
+        if ( ((float)rand()/RAND_MAX) > 0.50 )  // randomly choose between Min and Max
             m_targetFrameRate = 48.0;
         else
-            m_targetFrameRate = m_maxFrameRate;
+            m_targetFrameRate = m_maxFrameRate - 4;
         break;
-    case DropRateEnum::SquareWave:  // pick a random frame duration within the valid range
-        if (m_frameCounter & 0x01)  // alternate between Min and Max
+    case DropRateEnum::SquareWave:              // stress test alternating between 24 and max
+        if (m_frameCounter & 0x01)              // alternate between Min and Max
+//      if (m_frameCounter % 3 == 0 )
             m_targetFrameRate = m_minFrameRate;
         else
             m_targetFrameRate = m_maxFrameRate;
@@ -1307,7 +1321,7 @@ void Game::Update()
         break;
 
     case TestPattern::PanelCharacteristics:  //
-                                             //      UpdateDxgiColorimetryInfo();
+//      UpdateDxgiColorimetryInfo();
         break;
 
     case TestPattern::FlickerConstant:  // 2
@@ -1472,27 +1486,27 @@ void Game::ChangeSubtest(INT32 increment)
 
     switch (m_currentTest)
     {
-    case TestPattern::PanelCharacteristics:
+    case TestPattern::PanelCharacteristics:     // 1
         testTier = (int)m_testingTier;
         testTier += increment;
-        testTier      = clamp(testTier, (int)TestingTier::DisplayHDR400, (int)TestingTier::DisplayHDR10000);
+        testTier = clamp(testTier, (int)TestingTier::DisplayHDR400, (int)TestingTier::DisplayHDR10000);
         m_testingTier = (TestingTier)testTier;
         break;
 
-    case TestPattern::FlickerConstant:  // 2
+    case TestPattern::FlickerConstant:          // 2
         m_flickerRateIndex += increment;
         m_flickerRateIndex = wrap(m_flickerRateIndex, 0, numMediaRates + 1);
         break;
 
-    case TestPattern::FlickerVariable:  // 3
+    case TestPattern::FlickerVariable:          // 3
         testInt = (int)m_waveEnum;
         testInt += increment;
-        testInt    = wrap(testInt, (int)WaveEnum::ZigZag, (int)WaveEnum::Max);
+        testInt = wrap(testInt, (int)WaveEnum::ZigZag, (int)WaveEnum::Max);
         m_waveEnum = static_cast<WaveEnum>(testInt);
         ResetFrameStats();
         break;
 
-    case TestPattern::DisplayLatency:  // 4
+    case TestPattern::DisplayLatency:           // 4
         if (m_shiftKey)
             increment *= 10;
         if (m_sensing)
@@ -1509,14 +1523,14 @@ void Game::ChangeSubtest(INT32 increment)
         }
         break;
 
-    case TestPattern::GrayToGray:  // 5
+    case TestPattern::GrayToGray:                                                           // 5
         if (m_shiftKey)
             increment *= 10;
         m_g2gFrameRate += increment;
         m_g2gFrameRate = std::clamp(m_g2gFrameRate, 20.0, 1000.0);
         break;
 
-    case TestPattern::FrameDrop:  // 6
+    case TestPattern::FrameDrop:                                                            // 6
         testInt = (int)m_frameDropRateEnum;
         testInt += increment;
         testInt             = wrap(testInt, (int)DropRateEnum::Max, (int)DropRateEnum::p72fps);
@@ -1524,7 +1538,7 @@ void Game::ChangeSubtest(INT32 increment)
         ResetFrameStats();
         break;
 
-    case TestPattern::FrameLock:  // use media frame rates here                           // 7
+    case TestPattern::FrameLock:  // use media frame rates here                             // 7
         m_frameLockRateIndex += increment;
         if (m_frameLockRateIndex > numMediaRates - 1)
             m_frameLockRateIndex = 0;
@@ -1534,21 +1548,21 @@ void Game::ChangeSubtest(INT32 increment)
         ResetFrameStats();
         break;
 
-    case TestPattern::MotionBlur:  // 8
+    case TestPattern::MotionBlur:                                                           // 8
         if (m_shiftKey)
             increment *= 10;
         m_motionBlurFrameRate += increment;
         m_motionBlurFrameRate = std::clamp(m_motionBlurFrameRate, 20., 1000.);
         break;
 
-    case TestPattern::GameJudder:  // 9
+    case TestPattern::GameJudder:                                                           // 9
         if (m_shiftKey)
             increment *= 10;
         m_judderTestFrameRate += increment;
         m_judderTestFrameRate = std::clamp(m_judderTestFrameRate, 20., 1000.);
         break;
 
-    case TestPattern::Tearing:  // 0
+    case TestPattern::Tearing:                                                              // 0
         if (m_shiftKey)
             increment *= 10;
         m_tearingTestFrameRate += increment;
@@ -1665,16 +1679,16 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     //  m_latencyTestFrameRate = m_displayFrequency;    // default this to current OS setting
 
-    if (m_g2gFrameRate < 5)  // 5
+    if (m_g2gFrameRate < 5)                             // 5
         m_g2gFrameRate = m_maxFrameRate;
 
-    if (m_motionBlurFrameRate < 5)  // 8
+    if (m_motionBlurFrameRate < 5)                      // 8
         m_motionBlurFrameRate = m_maxFrameRate;
 
-    if (m_judderTestFrameRate < 5)  // 9
+    if (m_judderTestFrameRate < 5)                      // 9
         m_judderTestFrameRate = m_maxFrameRate;
 
-    if (m_tearingTestFrameRate < 5)  // 0
+    if (m_tearingTestFrameRate < 5)                     // 0
         m_tearingTestFrameRate = m_maxFrameRate;
 }
 
@@ -1728,8 +1742,8 @@ void Game::UpdateDxgiColorimetryInfo()
 
             auto displayMonitor = DisplayMonitor::FromInterfaceIdAsync(device.DeviceID).get();
 
-            //             const auto displayMonitor = foundMonitor.get();
-            //            DisplayMonitor displayMonitor(nullptr);
+//          const auto displayMonitor = foundMonitor.get();
+//          DisplayMonitor displayMonitor(nullptr);
 
             auto dims    = displayMonitor.NativeResolutionInRawPixels();
             m_modeWidth  = dims.Width;
@@ -1934,8 +1948,8 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
             text << fixed << setw(10) << setprecision(3) << rate << "Hz  ";
             text << fixed << setw(10) << setprecision(4) << 1000. / rate << "ms";
 
-            //            if (num == m_verticalSyncRate.Numerator
-            //             && den == m_verticalSyncRate.Denominator)
+//          if (num == m_verticalSyncRate.Numerator
+//           && den == m_verticalSyncRate.Denominator)
             if (abs(rate - m_displayFrequency) < 0.1)
                 text << L" <-- Current Max";
 
@@ -2003,8 +2017,8 @@ void Game::GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx)  /
     text << L"\nCurr. Brightness Slider Factor:   " << setw(8);
     text << BRIGHTNESS_SLIDER_FACTOR;
 
-    //  text << L"\nContrast ratio (peak/min):   ";
-    //  text << std::to_wstring(m_outputDesc.MaxLuminance / m_outputDesc.MinLuminance );
+ //  text << L"\nContrast ratio (peak/min):   ";
+ //  text << std::to_wstring(m_outputDesc.MaxLuminance / m_outputDesc.MinLuminance );
     text << L"\n";
 
     // Compute area of this device's gamut in uv coordinates
@@ -2140,7 +2154,7 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 
 // Flicker test -fixed frame rates:
 // Just draws the screen at about 10nits luminance in either HDR or SDR mode
-void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  // 2
+void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //************************************* 2
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -2150,13 +2164,13 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  // 2
     if (CheckHDR_On())
     {
         float nits = 40.0f;
-        c          = nitstoCCCS(nits);
+        c = nitstoCCCS(nits);
     }
     else
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
         float sRGBval = 127;
-        c             = RemoveSRGBCurve(sRGBval / 255.0f);
+        c = RemoveSRGBCurve(sRGBval / 255.0f);
     }
 
     ComPtr<ID2D1SolidColorBrush> flickerBrush;
@@ -2225,15 +2239,15 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  // 2
         {
             if (m_vTotalFixedApproved)
             {
-                title << "V-Total: Fixed\n";  // green -got presentDuration
+                title << "V-Total: Fixed\n";        // green -got presentDuration
             }
             else if (m_MPO)
             {
-                title << "MPO Overlay\n";  // blue  -just an overlay
+                title << "MPO Overlay\n";           // blue  -just an overlay
             }
             else
             {
-                title << "V-Total: Adaptive\n";  // red   -none of the above
+                title << "V-Total: Adaptive\n";     // red   -none of the above
             }
         }
         else
@@ -2264,7 +2278,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  // 2
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  // 3
+void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //************************************* 3
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -2687,13 +2701,13 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //**************** 5.
+void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //********************************** 5.
 {
     if (m_newTestSelected)
     {
         if (m_sensorConnected)
         {
-            //          m_sensor.Disconnect();
+//          m_sensor.Disconnect();
             ResetFrameStats();
         }
     }
@@ -2703,14 +2717,15 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
     if (!CheckHDR_On())  // SDR
     {
         // per CTS section 10.2
-        float sRGBval = 187.f;  // in 8-bit encoding
-        c             = sRGBval / 255.0f;
+        float sRGBval = 187.f;                  // in 8-bit encoding
+        c = sRGBval/255.0f;
+        c = RemoveSRGBCurve(c);                 // remove gamma
     }
     else  // HDR
     {
         // should turn out to be 520/1023 in PQ/2084 code
         float nits = 100.0f;
-        c          = nitstoCCCS(nits);
+        c = nitstoCCCS(nits);
     }
     ComPtr<ID2D1SolidColorBrush> surroundBrush;  // background
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &surroundBrush));
@@ -2726,11 +2741,11 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 
     // draw test pattern
     float size = sqrt((logSize.right - logSize.left) * (logSize.bottom - logSize.top));
-    size       = size * sqrtf(0.10);  // dimension of a square of 10% screen area
+    size = size * sqrtf(0.10);              // dimension of a square of 10% screen area
     float2 center;
-    center.x                   = (logSize.right - logSize.left) * 0.50f;
-    center.y                   = (logSize.bottom - logSize.top) * 0.50f;
-    D2D1_RECT_F tenPercentRect = {center.x - size * 0.50f, center.y - size * 0.50f, center.x + size * 0.50f, center.y + size * 0.50f};
+    center.x = (logSize.right - logSize.left)*0.50f;
+    center.y = (logSize.bottom - logSize.top)*0.50f;
+    D2D1_RECT_F tenPercentRect = {center.x - size*0.50f, center.y - size*0.50f, center.x + size*0.50f, center.y + size*0.50f};
     ctx->FillRectangle(&tenPercentRect, testBrush.Get());
 
     // Everything below this point should be hidden during actual measurements.
@@ -2772,13 +2787,13 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
         }
         if (!CheckHDR_On())
         {
-            title << "From:" << setw(9) << setprecision(4) << GrayToGrayValue(m_g2gFromIndex) * 100.f << "%";
-            title << "  To:" << setw(9) << setprecision(4) << GrayToGrayValue(m_g2gToIndex) * 100.f << "%\n";
+            title << "From:" << setw(9) << setprecision(3) << 255*m_g2gFromIndex/(numGtGValues - 1) << "/255";
+            title << "  To:" << setw(9) << setprecision(3) << 255*m_g2gToIndex/(numGtGValues - 1)   << "/255\n";
         }
         else
         {
-            title << "From:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gFromIndex) * 80.f << "nits";
-            title << "  To:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gToIndex) * 80.f << "nits\n";
+            title << "From:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gFromIndex)*80.f << "nits";
+            title << "  To:" << setw(9) << setprecision(3) << GrayToGrayValue(m_g2gToIndex)*80.f   << "nits\n";
         }
         title << "Press A to toggle Automatic sequence\n";
         if (m_logging)
@@ -2820,7 +2835,7 @@ bool isPrime(int n)
 #if defined(_DEBUG)
 #define EXPOSURE_TIME (1.0)  // time camera aperture is open -in seconds
 #endif
-void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //********************** 6
+void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //******************************************* 6
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -2831,10 +2846,10 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
     float nits = m_outputDesc.MaxLuminance;  // for metadata
 
     float HDR10 = 150;
-    nits        = Remove2084(HDR10 / 1023.0f) * 10000.0f;  // "white" checker brightness
+    nits = Remove2084(HDR10 / 1023.0f) * 10000.0f;  // "white" checker brightness
 
     float c = nitstoCCCS(nits);
-    c       = 0.50f;
+    c = 0.50f;
 
     int    nRows = 0, iCol, nCols = 0, jRow = 0, nCells;
     float2 step;
@@ -2877,9 +2892,9 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
 
     case DropRateEnum::Random: {
         // figure out number of squares to draw
-        double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
-        double avgFrameRate = 1.0 / avgFrameTime;
-        double cells        = avgFrameRate * EXPOSURE_TIME;
+        double avgFrameTime = (1.0/m_maxFrameRate + 1.0/48.0) * 0.5;
+        double avgFrameRate =  1.0/avgFrameTime;
+        double cells = avgFrameRate * EXPOSURE_TIME;
 
         // compute rows and columns for this many cells
         nCells = static_cast<int32_t>(round(cells));
@@ -2902,7 +2917,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= static_cast<float>(m_targetFrameTime / avgFrameTime);
-        c = static_cast<float>(0.5 * avgFrameTime / m_targetFrameTime);
+        c = static_cast<float>(pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, 1.4));     // gamma correct
 
         // compute position for current square
         iCol = m_frameCounter % nCols;
@@ -2916,9 +2931,9 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
 
     case DropRateEnum::SquareWave: {
         // figure out number of squares to draw
-        double avgFrameTime = (1.0 / m_maxFrameRate + 1.0 / 48.0) * 0.5;
-        double avgFrameRate = 1.0 / avgFrameTime;
-        double cells        = avgFrameRate * EXPOSURE_TIME;
+        double avgFrameTime = (1.0/m_maxFrameRate + 1.0/m_minFrameRate) * 0.5;
+        double avgFrameRate =  1.0/avgFrameTime;
+        double cells = avgFrameRate * EXPOSURE_TIME;
 
         // compute rows and columns for this many cells
         nCells = static_cast<int32_t>(round(cells));
@@ -2940,7 +2955,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= static_cast<float>(m_targetFrameTime / avgFrameTime);
-        c = static_cast<float>(0.5 * avgFrameTime / m_targetFrameTime);
+        c = static_cast<float>( pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, 0.7) );     // gamma correct
 
         // compute position for current square
         iCol = m_frameCounter % nCols;
@@ -3043,18 +3058,19 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
     if (m_logging)
     {
         fprintf_s(m_logFile,
-                  "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f\n",
+                  "%8.4f,%4.0f,%8.4f,%8.4f,%8.4f,%8.4f\n",
                   m_lastLogTime * 1000.f,
                   0.f,
                   m_targetFrameTime * 1000.f,
                   m_frameTime * 1000.,
-                  1000. / m_monitorSyncRate);
+                  1000. / m_monitorSyncRate,
+                  c*10.f );
     }
 
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //********************** 7
+void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //******************************************* 7
 {
     if (m_newTestSelected)
         ResetFrameStats();
@@ -3252,7 +3268,7 @@ void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ********************** 8.
+void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ***************************************** 8.
 {
     float refreshRate = 60.0f;  // simulate 60Hz video on Netflix or Youtube
     UNREFERENCED_PARAMETER(refreshRate);
@@ -3364,7 +3380,7 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ********
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // ********************** 9.
+void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // **************************************** 9.
 {
     float nits = 100;
 
@@ -3456,7 +3472,7 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // ********
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ********************** 0. T.
+void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ****************************************** 0. T.
 {
     if (m_newTestSelected)
         ResetFrameStats();

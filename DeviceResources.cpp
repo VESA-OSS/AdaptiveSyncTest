@@ -23,15 +23,15 @@ namespace
     inline bool SdkLayersAvailable()
     {
         HRESULT hr = D3D11CreateDevice(nullptr,
-                                       D3D_DRIVER_TYPE_NULL,  // There is no need to create a real hardware device.
-                                       0,
-                                       D3D11_CREATE_DEVICE_DEBUG,  // Check for the SDK layers.
-                                       nullptr,                    // Any feature level will do.
-                                       0,
-                                       D3D11_SDK_VERSION,
-                                       nullptr,  // No need to keep the D3D device reference.
-                                       nullptr,  // No need to know the feature level.
-                                       nullptr   // No need to keep the D3D device context reference.
+                         D3D_DRIVER_TYPE_NULL,      // There is no need to create a real hardware device.
+                         0,
+                         D3D11_CREATE_DEVICE_DEBUG, // Check for the SDK layers.
+                         nullptr,                   // Any feature level will do.
+                         0,
+                         D3D11_SDK_VERSION,
+                         nullptr,                   // No need to keep the D3D device reference.
+                         nullptr,                   // No need to know the feature level.
+                         nullptr                    // No need to keep the D3D device context reference.
         );
 
         return SUCCEEDED(hr);
@@ -233,8 +233,9 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         }
         else
         {
-            swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-            //          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            swapFlags = 0;                  // default is vsync on, not tearing
+//          swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
+//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
         }
         // If the swap chain already exists, resize it.
         HRESULT hr = m_swapChain->ResizeBuffers(m_backBufferCount, backBufferWidth, backBufferHeight, m_backBufferFormat, swapFlags);
@@ -293,8 +294,9 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         }
         else
         {
-            swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-            //          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            swapFlags = 0;                  // default is vsync enabled, not tearing
+//          swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
+//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
         }
         swapChainDesc.Flags = swapFlags;
 
