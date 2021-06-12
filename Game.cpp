@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.934"
+#define versionString L"v0.94 "
 
 #include "pch.h"
 
@@ -76,44 +76,46 @@ void Game::ConstructorInternal()
 
     m_currentTest = TestPattern::StartOfTest;
 
-    m_flickerRateIndex = 0;  // select between min, max, etc for Flicker test                    2
+    m_flickerRateIndex = 0;  // select between min, max, etc for Flicker test                   2
     m_waveCounter      = SQUARE_COUNT;
-    m_waveEnum         = WaveEnum::ZigZag;  // default                                           3
-    m_waveUp           = true;              // for use in zigzag wave                            3
-    m_waveAngle        = 0.;                // how far along we are in the sine wave             3
-    m_waveInterval     = 360;               // duration of sine wave period in frames            3
+    m_waveEnum         = WaveEnum::ZigZag;  // default                                          3
+    m_waveUp           = true;              // for use in zigzag wave                           3
+    m_waveAngle        = 0.;                // how far along we are in the sine wave            3
+    m_waveInterval     = 360;               // duration of sine wave period in frames           3
 
-    m_latencyRateIndex = 0;  // select between 60, 90, 120, 180, 240Hz for Latency tests         4
-    m_mediaRateIndex   = 0;  // select between 60, 90, 120, 180, 240Hz for Jitter                5
+    m_latencyRateIndex = 0;  // select between 60, 90, 120, 180, 240Hz for Latency tests        4
+    m_mediaRateIndex   = 0;  // select between 60, 90, 120, 180, 240Hz for Jitter               5
 
-    m_latencyTestFrameRate = 1;      // Flag for default to max                                  4
+    m_latencyTestFrameRate = 1;      // Flag for default to max                                 4
     m_sensorConnected      = false;  //
-    m_sensorNits           = 27.0f;  // threshold for detection by sensor in nits                4
+    m_sensorNits           = 27.0f;  // threshold for detection by sensor in nits               4
     m_sensing              = false;  //
-    m_flash                = false;  // whether we are flashing the photocell this frame         4
-    m_lastFlash            = false;  // whether last frame was a flash                           4
-    m_lastLastFlash        = false;  // whether last frame was a flash                           4
-    ResetSensorStats();              // initialize the sensor tracking data                      4
+    m_flash                = false;  // whether we are flashing the photocell this frame        4
+    m_lastFlash            = false;  // whether last frame was a flash                          4
+    m_lastLastFlash        = false;  // whether last frame was a flash                          4
+    ResetSensorStats();              // initialize the sensor tracking data                     4
     ResetFrameStats();               // initialize the frame timing data
     m_avgInputTime = 0.006;          // hard coded at 6ms until dongle can drive input
-#define USB_TIME (0.002)             // time for 1 round trip on USB wire       2ms?             4
+#define USB_TIME (0.002)             // time for 1 round trip on USB wire       2ms?            4
 
-    m_autoG2G      = false;  // if we are in automatic sequence mode                             5
-    m_g2gFrom      = true;   // start with "From" color                                          5
-    m_g2gFromIndex = 0;      // subtest for Gray To Gray test                                    5
-    m_g2gToIndex   = 0;      // subtest for Gray To Gray test                                    5
-    m_g2gFrameRate = 1;      // flag for default to max                                          5
-    m_g2gCounter   = 0;      // counter for interval of gray periods                             5
-    m_g2gInterval  = 16;     // default interval for G2G switching                               5
+    m_autoG2G      = false;  // if we are in automatic sequence mode                            5
+    m_g2gFrom      = true;   // start with "From" color                                         5
+    m_g2gFromIndex = 0;      // subtest for Gray To Gray test                                   5
+    m_g2gToIndex   = 0;      // subtest for Gray To Gray test                                   5
+    m_g2gFrameRate = 1;      // flag for default to max                                         5
+    m_g2gCounter   = 0;      // counter for interval of gray periods                            5
+    m_g2gInterval  = 16;     // default interval for G2G switching                              5
 
-    m_frameDropRateEnum    = DropRateEnum::Max;  // default to max                               6
-    m_frameLockRateIndex   = 0;                  // select sutbtest for frameDrop test           7
-    m_MotionBlurIndex      = maxMotionBlurs;     // start with frame fraction 100%               8
-    m_motionBlurFrameRate  = 60.;                //                                              8
-    m_judderTestFrameRate  = 1.;                 // flag for default to max                      9
-    m_fAngle               = 0;                  // angle of object moving around screen         8,9
-    m_tearingTestFrameRate = 1;                  // flag for default to max                      0
-    m_sweepPos             = 0;                  // position of bar in Tearing test              0
+    m_frameDropRateEnum    = DropRateEnum::Max;  // default to max                              6
+    m_frameDropGamma = 1.;      // used to balance brightness in square/random tests            6
+
+    m_frameLockRateIndex   = 0;                  // select sutbtest for frameDrop test          7
+    m_MotionBlurIndex      = maxMotionBlurs;     // start with frame fraction 100%              8
+    m_motionBlurFrameRate  = 60.;                //                                             8
+    m_judderTestFrameRate  = 1.;                 // flag for default to max                     9
+    m_fAngle               = 0;                  // angle of object moving around screen       8,9
+    m_tearingTestFrameRate = 1;                  // flag for default to max                     0
+    m_sweepPos             = 0;                  // position of bar in Tearing test             0
 
     m_targetFrameRate = 60.f;
     m_lastTargetFrameTime = 0;
@@ -1286,16 +1288,16 @@ void Game::UpdateFrameDrop()
         break;
     case DropRateEnum::Random:                  // pick a random frame duration within the valid range
         if ( ((float)rand()/RAND_MAX) > 0.50 )  // randomly choose between Min and Max
-            m_targetFrameRate = 48.0;
+            m_targetFrameRate = m_minFrameRate + 2;
         else
             m_targetFrameRate = m_maxFrameRate - 4;
         break;
     case DropRateEnum::SquareWave:              // stress test alternating between 24 and max
         if (m_frameCounter & 0x01)              // alternate between Min and Max
 //      if (m_frameCounter % 3 == 0 )
-            m_targetFrameRate = m_minFrameRate;
+            m_targetFrameRate = m_minFrameRate + 2;
         else
-            m_targetFrameRate = m_maxFrameRate;
+            m_targetFrameRate = m_maxFrameRate - 4;
         break;
     case DropRateEnum::p48fps:
         m_targetFrameRate = 48;
@@ -1451,19 +1453,24 @@ void Game::ChangeG2GInterval(INT32 increment)
 {
     switch (m_currentTest)
     {
-    case TestPattern::FlickerVariable:  // 3
+    case TestPattern::FlickerVariable:                                  // 3
         if (m_shiftKey)
             increment *= 10;
         m_waveInterval += increment;
         m_waveInterval = clamp(m_waveInterval, 1, 3600);
         break;
 
-    case TestPattern::GrayToGray:  // 5
+    case TestPattern::GrayToGray:                                       // 5
         m_g2gInterval += increment;
         m_g2gInterval = clamp(m_g2gInterval, 1, 90);
         break;
 
-    case TestPattern::MotionBlur:  // 8
+    case TestPattern::FrameDrop:                                        // 6
+        m_frameDropGamma += increment*0.1;
+        m_frameDropGamma = clamp(m_frameDropGamma, 0.1, 3.0 );
+        break;
+
+    case TestPattern::MotionBlur:                                       // 8
         m_MotionBlurIndex += increment;
         if (m_MotionBlurIndex > maxMotionBlurs + 3)
             m_MotionBlurIndex = 0;
@@ -2892,14 +2899,14 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
 
     case DropRateEnum::Random: {
         // figure out number of squares to draw
-        double avgFrameTime = (1.0/m_maxFrameRate + 1.0/48.0) * 0.5;
+        double avgFrameTime = (1.0/m_maxFrameRate + 1.0/m_minFrameRate) * 0.5;
         double avgFrameRate =  1.0/avgFrameTime;
         double cells = avgFrameRate * EXPOSURE_TIME;
 
         // compute rows and columns for this many cells
         nCells = static_cast<int32_t>(round(cells));
-        if (isPrime(nCells))
-            nCells++;
+//      if (isPrime(nCells))
+//          nCells++;
 
         nRows = static_cast<int32_t>(floor(sqrt(cells))) + 1;
         nCols = nCells / nRows;
@@ -2917,7 +2924,8 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= static_cast<float>(m_targetFrameTime / avgFrameTime);
-        c = static_cast<float>(pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, 1.4));     // gamma correct
+        c = static_cast<float>(pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, m_frameDropGamma ));     // match brightness
+        c += 0.15;  // make sure we always have some color to draw even for very long frames
 
         // compute position for current square
         iCol = m_frameCounter % nCols;
@@ -2955,7 +2963,8 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         step.y = (logSize.bottom - logSize.top) / nRows;
 
         step.x *= static_cast<float>(m_targetFrameTime / avgFrameTime);
-        c = static_cast<float>( pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, 0.7) );     // gamma correct
+        c = static_cast<float>( pow(0.2 + 0.5*avgFrameTime / m_targetFrameTime, m_frameDropGamma) ); // match brightness
+        c += 0.15;  // make sure we always have some color to draw even for very long frames
 
         // compute position for current square
         iCol = m_frameCounter % nCols;
@@ -3009,10 +3018,10 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
             title << L"-Maximum\n";
             break;
         case DropRateEnum::Random:
-            title << L"-Random\n";
+            title << L"-Random "      << fixed << setw(3) << setprecision(1) << m_frameDropGamma << "\n";
             break;
         case DropRateEnum::SquareWave:
-            title << L"-Square Wave\n";
+            title << L"-Square Wave " << fixed << setw(3) << setprecision(1) << m_frameDropGamma << "\n";
             break;
         case DropRateEnum::p48fps:
             title << L"-fixed 48fps\n";
@@ -3043,9 +3052,17 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
         title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
 
-        title << "Grid " << nRows << " x " << nCols;
+        title << "Grid " << nRows << " x " << nCols << L"\n";
 
-        title << L"\nSelect refresh rate using Up/Down arrows\n";
+        switch (m_frameDropRateEnum)
+        {
+        case DropRateEnum::SquareWave:
+        case DropRateEnum::Random:
+            title << L"Adjust brigthness of small vs large tiles via '+' and '-' keys\n";
+            break;
+        }
+
+        title << L"Select refresh rate using Up/Down arrows\n";
 
         if (m_logging)
             title << L"Logging\n";

@@ -398,13 +398,13 @@ class Game : public DX::IDeviceNotify
     UINT m_minDuration;     // min frame time for Fixed V-Total mode
     UINT m_maxDuration;     // max frame time for Fixed V-Total mode
 
-    INT32 m_flickerRateIndex;  // select frame rate in flicker test                2
+    INT32 m_flickerRateIndex;  // select frame rate in flicker test                     2
 
-    INT32    m_waveCounter;   // control for square wave                          3
-    WaveEnum m_waveEnum;      // zigzag vs square wave vs random                  3
-    bool     m_waveUp;        // zig up or down                                   3
-    double   m_waveAngle;     // how far along we are in the sine wave            3
-    INT32    m_waveInterval;  // period of these waveforms                        3
+    INT32    m_waveCounter;   // control for square wave                                3
+    WaveEnum m_waveEnum;      // zigzag vs square wave vs random                        3
+    bool     m_waveUp;        // zig up or down                                         3
+    double   m_waveAngle;     // how far along we are in the sine wave                  3
+    INT32    m_waveInterval;  // period of these waveforms                              3
 
     INT32  m_latencyRateIndex;      // select frame rate in frame latency test          4
     double m_latencyTestFrameRate;  // frame rate specific to this test pattern         4
@@ -422,23 +422,24 @@ class Game : public DX::IDeviceNotify
     double m_totalSensorTime;       // sum of sensor time. Used to compute average      4
     double m_totalSensorTime2;      // sum of squares. Used to compute variance         4
 
-    bool   m_g2gFrom;       // whether we use the "From" color or "To" color    5
-    INT32  m_g2gFromIndex;  // counter for the GtG level to transition from     5
-    INT32  m_g2gToIndex;    // counter for the GtG level we transition to       5
-    double m_g2gFrameRate;  // custom frame rate for gray-to-gray test          5
-    INT32  m_g2gInterval;   // number of frames to hold between switches        5
-    bool   m_autoG2G;       // whether we are doing the automatic G2G Sequence  5
-    INT32  m_g2gCounter;    // counter for g2g interval                         5
+    bool   m_g2gFrom;               // whether we use the "From" color or "To" color    5
+    INT32  m_g2gFromIndex;          // counter for the GtG level to transition from     5
+    INT32  m_g2gToIndex;            // counter for the GtG level we transition to       5
+    double m_g2gFrameRate;          // custom frame rate for gray-to-gray test          5
+    INT32  m_g2gInterval;           // number of frames to hold between switches        5
+    bool   m_autoG2G;               // whether we are doing the automatic G2G Sequence  5
+    INT32  m_g2gCounter;            // counter for g2g interval                         5
 
-    DropRateEnum m_frameDropRateEnum;  // select frame rate in frame drop test             6
-    bool         m_bitTable[32][32];   // table to randomize frame durations               6
+    DropRateEnum m_frameDropRateEnum;  // select frame rate in frame drop test          6
+    bool   m_bitTable[32][32];          // table to randomize frame durations           6
+    double m_frameDropGamma;         // factor to tune brightness in square/random      6
 
-    INT32  m_frameLockRateIndex;   // select frame rate in frame lock test             7
-    INT32  m_mediaRateIndex;       // ??
-    float  m_fAngle;               // angle where moving object is at                  8
-    INT32  m_MotionBlurIndex;      // counter for frame fraction                       8
-    double m_motionBlurFrameRate;  // frame rate in BFI test                           8
-    double m_judderTestFrameRate;  // for BFI test                                     9
+    INT32  m_frameLockRateIndex;    // select frame rate in frame lock test             7
+    INT32  m_mediaRateIndex;        // ??
+    float  m_fAngle;                // angle where moving object is at                  8
+    INT32  m_MotionBlurIndex;       // counter for frame fraction                       8
+    double m_motionBlurFrameRate;   // frame rate in BFI test                           8
+    double m_judderTestFrameRate;   // for BFI test                                     9
 
     float  m_sweepPos;              // position of bar in tearing test (pixels)         0
     double m_tearingTestFrameRate;  // for tearing check                                0
