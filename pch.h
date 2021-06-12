@@ -51,9 +51,7 @@ namespace winrt::impl
 #include <wincodec.h>
 #include <dxgi1_6.h>
 
-#include <DirectXMath.h>
 #include <DirectXColors.h>
-#include <d3dcompiler.h>
 
 #include <algorithm>
 #include <array>

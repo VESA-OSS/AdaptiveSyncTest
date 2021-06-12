@@ -280,21 +280,21 @@ class Game : public DX::IDeviceNotify
     // Drawing code specific for each test pattern.
     void GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx);
     void GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx);
-    void GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx);  // 1
+    void GenerateTestPattern_PanelCharacteristics(ID2D1DeviceContext2* ctx);    // 1
     void GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx);
-    void GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx);  // 2
-    void GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx);  // 3
-    void GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx);   // 4
-    void GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx);       // 5
-    void GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx);        // 6
-    void GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx);        // 7
+    void GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx);         // 2
+    void GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx);         // 3
+    void GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx);          // 4
+    void GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx);              // 5
+    void GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx);               // 6
+    void GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx);               // 7
     void GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx);
-    void GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx);  // 8
-    void GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx);  // 9
-    void GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx);     // T
+    void GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx);              // 8
+    void GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx);              // 9
+    void GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx);                 // T
     void GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx);
-    void GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx);    // W
-    void GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx);  // C
+    void GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx);                  // W
+    void GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx);                // C
 
     // Generalized routine for all tests that involve loading an image.
     void GenerateTestPattern_ImageCommon(ID2D1DeviceContext2* ctx, TestPatternResources resources);
@@ -374,21 +374,22 @@ class Game : public DX::IDeviceNotify
     double   m_maxPresentTime;     // longest  time it took to Present since reset
     double   m_avgInputTime;       // hard-coded until dongle drives input
 
-    double   m_totalTimeSinceStart;   // not sure if I need this?
-    double   m_testTimeRemainingSec;  // how long current test has been running in seconds
-    uint64_t m_frameCounter;          // how many frames rendered in app since swapchain create
-//  uint64_t   m_presentCounter;       // how many frames the driver has Presented since swapchain create
-    double     m_targetFrameRate;       // frame rate we want to achieve
-    double     m_targetFrameTime;       // duration of the frame being presented
-    double     m_lastTargetFrameTime;   // save this from last frame as it may match current time
-    bool       m_vTotalFixedSupported;  // this monitor/GPU supports PresentDuration timings
-    VTotalMode m_vTotalModeRequested;   // UI requests either Fixed frame rate vs Adaptive (g-sync)
-    bool       m_vTotalFixedApproved;   // config has approved use of V-Total Fixed
-    bool       m_MPO;                   // we got access to an overlay plane
-    uint64_t   m_lastMonCounts;         // how many QPC counts since last measurement
-    uint64_t   m_lastMonSyncs;          // how many v-sync Refreshes since last time
-    double     m_monitorSyncRate;       // frame rate of actual display refreshes per FrameStats API
-    bool       m_paused;                // whether we are updating data or not
+    double   m_totalTimeSinceStart;     // not sure if I need this?
+    double   m_testTimeRemainingSec;    // how long current test has been running in seconds
+    uint64_t m_frameCounter;            // how many frames rendered in app since swapchain create
+//  uint64_t    m_presentCounter;       // how many frames the driver has Presented since swapchain create
+    double      m_targetFrameRate;      // frame rate we want to achieve
+    double      m_targetFrameTime;      // duration of the frame being presented
+    double      m_lastTargetFrameTime;  // save this from last frame as it may match current time
+    bool        m_vTotalFixedSupported; // this monitor/GPU supports PresentDuration timings
+    VTotalMode  m_vTotalModeRequested;  // UI requests either Fixed frame rate vs Adaptive (g-sync)
+    bool        m_vTotalFixedApproved;  // config has approved use of V-Total Fixed
+    bool        m_MPO;                  // we got access to an overlay plane
+    int         m_EDIDBlobSize;         // number of bytes in EDID or DisplayID blob                // 1
+    uint64_t    m_lastMonCounts;        // how many QPC counts since last measurement
+    uint64_t    m_lastMonSyncs;         // how many v-sync Refreshes since last time
+    double      m_monitorSyncRate;      // frame rate of actual display refreshes per FrameStats API
+    bool        m_paused;               // whether we are updating data or not
 
     double m_maxFrameRate;    // maximum mode enumerated on this config (monitor+driver)
     double m_minFrameRate;    // minimum mode enumerated on this config

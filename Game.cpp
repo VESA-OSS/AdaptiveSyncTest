@@ -72,6 +72,8 @@ void Game::ConstructorInternal()
     m_minDuration  = 0;  // min frame time for Fixed V-Total mode -default to 0 for adaptive only
     m_maxDuration  = 0;  // max frame time for Fixed V-Total mode -default to 0 for adaptive only
 
+    m_connectionDescriptorKind = DisplayMonitorDescriptorKind::DisplayId;
+
     m_color = 0.f;  // black by default
 
     m_currentTest = TestPattern::StartOfTest;
@@ -1770,6 +1772,21 @@ void Game::UpdateDxgiColorimetryInfo()
             m_connectionKind        = displayMonitor.ConnectionKind();
             m_physicalConnectorKind = displayMonitor.PhysicalConnector();
 
+            // get raw descriptor blob from this panel EDID or DisplayID
+            auto buf = displayMonitor.GetDescriptor( DisplayMonitorDescriptorKind::Edid );
+            if (buf.size() != 0)
+            {
+                m_connectionDescriptorKind = DisplayMonitorDescriptorKind::Edid;
+            }
+            else
+            {
+                buf = displayMonitor.GetDescriptor(DisplayMonitorDescriptorKind::DisplayId);
+                if (buf.size() != 0)
+                {
+                    m_connectionDescriptorKind = DisplayMonitorDescriptorKind::DisplayId;
+                }
+            }
+            m_EDIDBlobSize = buf.size();
             break;
         }
     }
@@ -1865,16 +1882,17 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         text << "Wired ";
         break;
     case DisplayMonitorConnectionKind::Wireless:
-        text << "Wireless";
+        text << "Wireless ";
         break;
     case DisplayMonitorConnectionKind::Virtual:
-        text << "Virtual";
+        text << "Virtual ";
         break;
     default:
         text << "Error";
         break;
     }
 
+    // print the type of physical connector used by this display
     switch (m_physicalConnectorKind)
     {
     case DisplayMonitorPhysicalConnectorKind::Unknown:
@@ -1907,20 +1925,22 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         break;
     }
 
-#if 0  // TODO: apparently the method to return this does not exist in Windows.
+    // Print the type of descriptor the display sent us
     switch (m_connectionDescriptorKind)
     {
     case DisplayMonitorDescriptorKind::Edid:
-        text << " with EDID";
+        text << " with EDID ";
         break;
     case DisplayMonitorDescriptorKind::DisplayId:
-        text << " with DisplayID";
+        text << " with DisplayID ";
         break;
     default:
-        text << " ";  // " Error"; 
+        text << " Unknown";     // should never happen
         break;
     }
-#endif
+
+    // print number of blocks we found in the EDID
+    text << m_EDIDBlobSize<< "B " << m_EDIDBlobSize/128 << "blocks";
 
     text << L"\nColorspace: [";
     text << std::to_wstring(m_outputDesc.ColorSpace);
@@ -1937,6 +1957,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         text << L"] Unknown";
         break;
     }
+
     text << "\nResolution: " << m_modeWidth << " x " << m_modeHeight;
     text << " x " << std::to_wstring(m_outputDesc.BitsPerColor) << L"bits @ ";
     text << m_displayFrequency << L"Hz\n";
