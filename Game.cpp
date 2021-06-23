@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.94 "
+#define versionString L"v0.941"
 
 #include "pch.h"
 
@@ -1654,6 +1654,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
                 m_minFrameRate = rate;
         }
     }
+//  m_maxFrameRate = 165;                                                   // TODO: test an odd number on occasion
     m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
 
     // TODO tag which mode is current (defaults to highest for now)
@@ -2316,13 +2317,13 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
     if (CheckHDR_On())
     {
         float nits = 40.0f;
-        c          = nitstoCCCS(nits);
+        c = nitstoCCCS(nits);
     }
     else
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
         float sRGBval = 127;
-        c             = RemoveSRGBCurve(sRGBval / 255.0f);
+        c = RemoveSRGBCurve(sRGBval / 255.0f);
     }
 
     ComPtr<ID2D1SolidColorBrush> flickerBrush;
@@ -2438,12 +2439,13 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
     if (CheckHDR_On())
     {
         float nits = 100.0f;
-        c          = nitstoCCCS(nits);
+        c = nitstoCCCS(nits);
     }
     else
     {
-        // code value to attain 10nits on an SDR monitor with 200nit page white
-        c = 0.5;
+        // TODO: change code value to attain 10nits on an SDR monitor with 200nit page white
+        float sRGBval = 127;
+        c = RemoveSRGBCurve(sRGBval / 255.0f);
     }
 
     // fill the screen background with 100 nits white
@@ -2744,10 +2746,9 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
     float c;
     if (!CheckHDR_On())  // SDR
     {
-        // per CTS section 10.2
-        float sRGBval = 187.f;                  // in 8-bit encoding
-        c = sRGBval/255.0f;
-        c = RemoveSRGBCurve(c);                 // remove gamma
+        // per CTS section 10.2 - changed at meeting on 2021-06-22 to 40nits like other test background
+        float sRGBval = 127.f;                           // in 8-bit encoding
+        c = RemoveSRGBCurve(sRGBval / 255.0f);           // remove gamma
     }
     else  // HDR
     {
@@ -2952,8 +2953,11 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         iCol = m_frameCounter % nCols;
         jRow = (m_frameCounter / nCols) % nRows;
 
-        if (iCol == 0)
-            m_sweepPos = 0;
+        if ( iCol == (nCols - 1) )
+            step.x = logSize.right;
+
+        if ( iCol == 0 )
+            m_sweepPos = 0; 
 
         break;
     }
@@ -2991,6 +2995,9 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         iCol = m_frameCounter % nCols;
         jRow = (m_frameCounter / nCols) % nRows;
 
+        if (iCol == (nCols - 1))
+            step.x = logSize.right;
+
         if (iCol == 0)
             m_sweepPos = 0;
 
@@ -3026,6 +3033,15 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
     ctx->FillRectangle(&rect, whiteBrush.Get());
     m_sweepPos += step.x;
+
+    // draw the gutters between rows as a reference black level
+    float dy = step.y * 0.1f;
+    for (int j = 0; j <= nRows; j++)
+    {
+        float y = j * step.y;
+        rect = { logSize.left, y - dy, logSize.right, y + dy };
+        ctx->FillRectangle(&rect, m_blackBrush.Get());
+    }
 
     // Everything below this point should be hidden during actual measurements.
     if (m_showExplanatoryText)
