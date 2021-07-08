@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.941"
+#define versionString L"v0.943"
 
 #include "pch.h"
 
@@ -747,22 +747,28 @@ void Game::Tick()
 
 #define NEW_WAY
 #ifdef NEW_WAY
+#define ROUND_DIV(x, y) (((x) + (y) / 2) / (y)) 
                 // compute a new presentDuration that is below the max supported by the display
                 INT64 newDuration = m_mediaPresentDuration;
-                INT64 maxDuration = (m_maxDuration * 1002) / 1000;  // apply some padding
+                INT64 maxDuration = m_maxDuration;
+ //             if (!m_vTotalFixedSupported)                                                 // if true duration API is not supported
+ //                 maxDuration = static_cast<int64_t>(10000000.0 / m_minFrameRate );        // approximate for this fn only
+
+                maxDuration = (maxDuration * 1002) / 1000;          // apply some padding
+
                 if (newDuration > maxDuration)                      // try doubling frame rate
                 {
-                    newDuration       = m_mediaPresentDuration / 2;
+                    newDuration       = ROUND_DIV( m_mediaPresentDuration, 2 );
                     m_mediaVsyncCount = 2;
                 }
                 if (newDuration > maxDuration)  // if that wasn't enough, try tripling
                 {
-                    newDuration       = m_mediaPresentDuration / 3;
+                    newDuration       = ROUND_DIV( m_mediaPresentDuration, 3 );
                     m_mediaVsyncCount = 3;
                 }
                 if (newDuration > maxDuration)  // if that wasn't enough, try quadrupling
                 {
-                    newDuration       = m_mediaPresentDuration / 4;
+                    newDuration       = ROUND_DIV( m_mediaPresentDuration, 4 );
                     m_mediaVsyncCount = 4;
                 }
                 m_mediaPresentDuration = newDuration;
@@ -1036,7 +1042,8 @@ void Game::TickOld()
 #endif
 
 // Every test pattern could have an update routine to call in the main update routine in Tick()
-void Game::UpdateFlickerConstant()  //  2
+// Flicker test for fixed frame rate set                                                                    2
+void Game::UpdateFlickerConstant()
 {
     auto maxFrameRate = m_maxFrameRate;
     /* this is not reliable
@@ -1505,6 +1512,7 @@ void Game::ChangeSubtest(INT32 increment)
     case TestPattern::FlickerConstant:          // 2
         m_flickerRateIndex += increment;
         m_flickerRateIndex = wrap(m_flickerRateIndex, 0, numMediaRates + 1);
+        ResetFrameStats();
         break;
 
     case TestPattern::FlickerVariable:          // 3
@@ -1529,6 +1537,7 @@ void Game::ChangeSubtest(INT32 increment)
         {
             m_latencyTestFrameRate += increment;
             m_latencyTestFrameRate = std::clamp(m_latencyTestFrameRate, 20., 1000.);
+            ResetFrameStats();
         }
         break;
 
@@ -1537,6 +1546,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_g2gFrameRate += increment;
         m_g2gFrameRate = std::clamp(m_g2gFrameRate, 20.0, 1000.0);
+        ResetFrameStats();
         break;
 
     case TestPattern::FrameDrop:                                                            // 6
@@ -1562,6 +1572,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_motionBlurFrameRate += increment;
         m_motionBlurFrameRate = std::clamp(m_motionBlurFrameRate, 20., 1000.);
+        ResetFrameStats();
         break;
 
     case TestPattern::GameJudder:                                                           // 9
@@ -1569,6 +1580,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_judderTestFrameRate += increment;
         m_judderTestFrameRate = std::clamp(m_judderTestFrameRate, 20., 1000.);
+        ResetFrameStats();
         break;
 
     case TestPattern::Tearing:                                                              // 0
@@ -1576,7 +1588,9 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_tearingTestFrameRate += increment;
         m_tearingTestFrameRate = std::clamp(m_tearingTestFrameRate, 20., 1000.);
+        ResetFrameStats();
         break;
+
     }
 }
 void Game::UpdateDxgiRefreshRatesInfo()
@@ -1980,7 +1994,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
 //          if (num == m_verticalSyncRate.Numerator
 //           && den == m_verticalSyncRate.Denominator)
             if (abs(rate - m_displayFrequency) < 0.1)
-                text << L" <-- Current Max";
+                text << L" <-- Current Windows maximum";
 
             text << L"\n";
         }
@@ -1988,6 +2002,9 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
 
     m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
     text << "  Ratio:" << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
+
+    if (m_maxFrameRate > m_displayFrequency)
+        text << L"\nWARNING: **** Current Windows Settings may block testing of monitor peak rate ****\n";
 
     // print the video frame rate range supported
     text << "\nRange of refresh rates supported for fixed rate full-screen media playback:\n";
@@ -2228,8 +2245,12 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
         }
         if (m_targetFrameRate < (m_minFrameRate - 0.1))
             title << " Below Min - likely doubled.";
+        title << "\n";
 
-        title << fixed << "\n";
+        if ( m_targetFrameRate > m_displayFrequency )
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
+        title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << m_targetFrameTime * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
@@ -2242,7 +2263,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
 #if 0
         // display brightness level for this test
@@ -2359,6 +2380,9 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
             break;
         }
 
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -2372,7 +2396,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
 #if 0
         // display brightness level for this test
@@ -2438,7 +2462,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
     float c;
     if (CheckHDR_On())
     {
-        float nits = 100.0f;
+        float nits = 40.0f;
         c = nitstoCCCS(nits);
     }
     else
@@ -2713,7 +2737,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
         title << "\nPress R to Reset stat counters";
         title << "\n" << m_hideTextString;
 
-        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
+        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect );
     }
 
     // dump data to log file
@@ -2744,17 +2768,17 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 
     // compute brush for surround -
     float c;
-    if (!CheckHDR_On())  // SDR
+    if (CheckHDR_On())  // HDR
+    {
+        // should turn out to be 520/1023 in PQ/2084 code
+        float nits = 40.0f;
+        c = nitstoCCCS(nits);
+    }
+    else  // SDR
     {
         // per CTS section 10.2 - changed at meeting on 2021-06-22 to 40nits like other test background
         float sRGBval = 127.f;                           // in 8-bit encoding
         c = RemoveSRGBCurve(sRGBval / 255.0f);           // remove gamma
-    }
-    else  // HDR
-    {
-        // should turn out to be 520/1023 in PQ/2084 code
-        float nits = 100.0f;
-        c = nitstoCCCS(nits);
     }
     ComPtr<ID2D1SolidColorBrush> surroundBrush;  // background
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &surroundBrush));
@@ -2790,6 +2814,9 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
             title << L"     To ";
         title << fixed << setw(m_g2gCounter + 1) << m_g2gCounter;
 
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\n\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n";
+
         title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
@@ -2802,7 +2829,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
         if (m_autoG2G)
         {
@@ -2829,7 +2856,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
             title << L"Logging\n";
         title << m_hideTextString;
 
-        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
+        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect );
     }
 
     // dump data to log file
@@ -3074,6 +3101,9 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
             break;
         }
 
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -3087,7 +3117,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
         title << "Grid " << nRows << " x " << nCols << L"\n";
 
@@ -3137,7 +3167,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //**********
     float HDR10 = 150;
     nits        = Remove2084(HDR10 / 1023.0f) * 10000.0f;  // "white" checker brightness
 
-    float c = nitstoCCCS(nits) / BRIGHTNESS_SLIDER_FACTOR;
+    float c = nitstoCCCS(nits);
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &whiteBrush));
 
     // decide shape of grid for test pattern
@@ -3242,6 +3272,17 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //**********
     D2D1_RECT_F rect = {iCol * step.x, jRow * step.y, (iCol + 1) * step.x, (jRow + 1) * step.y};
     ctx->FillRectangle(&rect, whiteBrush.Get());
 
+#if 0   // this needs exposure correction to align with the tiles drawn only 1 frame.
+    // draw the gutters between rows as a reference white level
+    float dy = step.y * 0.07f;
+    for (int j = 0; j <= nRows; j++)
+    {
+        float y = j * step.y;
+        rect = { logSize.left, y - dy, logSize.right, y + dy };
+        ctx->FillRectangle(&rect, whiteBrush.Get());
+    }
+#endif
+
     // Everything below this point should be hidden during actual measurements.
     if (m_showExplanatoryText)
     {
@@ -3253,6 +3294,10 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //**********
         std::wstringstream title;
         title << versionString;
         title << L" Test 7 - Framerate Lock or Jitter Test\n";
+
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -3266,7 +3311,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //**********
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
         title << "Grid " << nRows << " x " << nCols << "\n";
 
@@ -3324,9 +3369,6 @@ void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
 
 void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ***************************************** 8.
 {
-    float refreshRate = 60.0f;  // simulate 60Hz video on Netflix or Youtube
-    UNREFERENCED_PARAMETER(refreshRate);
-
     m_targetFrameRate = m_motionBlurFrameRate;
 
     // get window dimensions in pixels
@@ -3380,13 +3422,25 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ********
         std::wstringstream title;
         title << versionString;
         title << L" Test 8 - Motion Blur Tuning\n";
+
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+
         title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
+
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
         title << "Frame Fraction: ";
         title << fixed << setw(6) << setprecision(2) << FrameFraction;  // in Percent?
@@ -3487,21 +3541,30 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // ********
 
     if (m_showExplanatoryText)
     {
-        double refreshRate = m_targetFrameRate;
-
         std::wstringstream title;
         title << versionString;
         title << L" Test 9 - Game Judder Removal";
         if (bBFI)
             title << "  BFI";
-        title << "\nTarget:  ";
-        title << fixed << setw(10) << setprecision(3);
-        title << refreshRate << L"Hz   " << 1.0f / refreshRate * 1000.f << L"ms\n";
-        title << "Current: ";
-        title << fixed << setw(10) << setprecision(3);
-        title << 1.0 / m_frameTime << L"Hz   " << m_frameTime * 1000.f << L"ms\n";
+
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\n\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n";
+
+        title << fixed;
+        title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
+        title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+
+        title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
+
+        double avgFrameTime = m_totalFrameTime / m_frameCount;
+        title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
+        title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
+        double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
+        title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
+
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(7) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
         title << L"\nSelect App Work time using Up/Down arrows\n";
         if (m_logging)
@@ -3560,12 +3623,13 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ***********
 
     if (m_showExplanatoryText)
     {
-        double refreshRate = m_targetFrameRate;
-        UNREFERENCED_PARAMETER(refreshRate);
-
         std::wstringstream title;
         title << versionString;
         title << L" Test 10 - Tearing Check\n";
+
+        if (m_targetFrameRate > m_displayFrequency)
+            title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
+
         title << fixed;
         title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
         title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
@@ -3580,7 +3644,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ***********
         title << setw(10) << setprecision(5) << varFrameTime * 1000.f << L"ms\n";
 
         title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
-        title << setw(9) << setprecision(1) << m_monitorSyncRate * m_frameTime << "X\n";
+        title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
         title << "Columns: " << nCols;
 
         title << L"\nSelect frame rate using Up/Down arrows\n";
@@ -3630,7 +3694,7 @@ void Game::GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx)
 void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
 {
     float nits = 180.0f;  // warm up level
-    float c    = nitstoCCCS(nits) / BRIGHTNESS_SLIDER_FACTOR;
+    float c    = nitstoCCCS(nits);
 
     ComPtr<ID2D1SolidColorBrush> peakBrush;
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &peakBrush));
@@ -3659,7 +3723,7 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
             title << L" done.";
         }
 
-        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true);
+        RenderText(ctx, m_monospaceFormat.Get(), title.str(), m_testTitleRect, true );
     }
     m_newTestSelected = false;
 }
