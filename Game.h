@@ -272,7 +272,8 @@ class Game : public DX::IDeviceNotify
     float          GrayToGrayValue(INT32 index);
 
     void ResetSensorStats(void);
-    void ResetFrameStats(void);
+    void ResetAverageStats(void);
+    void AutoResetAverageStats(void);
 
     // float ComputeGamutArea( float2 r, float2 g, float2 b );
     // float ComputeGamutCoverage( float2 r1, float2 g1, float2 b1, float2 r2, float2 g2, float2 b2 );
@@ -391,13 +392,14 @@ class Game : public DX::IDeviceNotify
     double      m_monitorSyncRate;      // frame rate of actual display refreshes per FrameStats API
     bool        m_paused;               // whether we are updating data or not
 
-    double m_maxFrameRate;    // maximum mode enumerated on this config (monitor+driver)
-    double m_minFrameRate;    // minimum mode enumerated on this config
-    double m_FrameRateRatio;  // ratio of above min to max available in adaptive sync
-    double m_OSFrameRate;     // Advanced Display Settings (upper limit for AdaptSync)
+    double m_maxFrameRate;          // maximum mode enumerated on this config (monitor+driver)
+    double m_minFrameRate;          // minimum mode enumerated on this config
+    double m_FrameRateRatio;        // ratio of above min to max available in adaptive sync
+    double m_OSFrameRate;           // Advanced Display Settings (upper limit for AdaptSync)
+    INT64 m_autoResetAverageStatsCounts; // last time we started the statscount auto-reset timer
 
-    UINT m_minDuration;     // min frame time for Fixed V-Total mode
-    UINT m_maxDuration;     // max frame time for Fixed V-Total mode
+    UINT m_minDuration;         // min frame time for Fixed V-Total mode
+    UINT m_maxDuration;         // max frame time for Fixed V-Total mode
 
     INT32 m_flickerRateIndex;  // select frame rate in flicker test                     2
 

@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.943"
+#define versionString L"v0.945"
 
 #include "pch.h"
 
@@ -71,6 +71,7 @@ void Game::ConstructorInternal()
     m_maxFrameRate = 120;
     m_minDuration  = 0;  // min frame time for Fixed V-Total mode -default to 0 for adaptive only
     m_maxDuration  = 0;  // max frame time for Fixed V-Total mode -default to 0 for adaptive only
+    m_autoResetAverageStatsCounts = MAXINT64;
 
     m_connectionDescriptorKind = DisplayMonitorDescriptorKind::DisplayId;
 
@@ -96,7 +97,7 @@ void Game::ConstructorInternal()
     m_lastFlash            = false;  // whether last frame was a flash                          4
     m_lastLastFlash        = false;  // whether last frame was a flash                          4
     ResetSensorStats();              // initialize the sensor tracking data                     4
-    ResetFrameStats();               // initialize the frame timing data
+    AutoResetAverageStats();         // initialize the frame timing data
     m_avgInputTime = 0.006;          // hard coded at 6ms until dongle can drive input
 #define USB_TIME (0.002)             // time for 1 round trip on USB wire       2ms?            4
 
@@ -310,6 +311,54 @@ void Game::ToggleAutoG2G()
         }
     }
 }
+
+uint64_t myQPC()
+{
+    static const uint64_t TicksPerSecond = 10000000;  // microseconds
+    LARGE_INTEGER         cycles, qpcFrequency;
+
+    QueryPerformanceFrequency(&qpcFrequency);
+
+    QueryPerformanceCounter(&cycles);
+
+    uint64_t r = cycles.QuadPart * TicksPerSecond;
+
+    return r;
+}
+
+void mySleep(double mseconds)  // All routines named "sleep" must take milliseconds ms
+{
+    LARGE_INTEGER qpcFrequency, counts;  // args to system calls
+    uint64_t      time, timeLimit;       // 64b ints for intermediate checking
+
+    if (mseconds <= 0)  // validate input
+    {
+        Sleep(0);  // in case this is in a loop
+        return;
+    }
+
+    QueryPerformanceFrequency(&qpcFrequency);  // get counts per second
+
+    QueryPerformanceCounter(&counts);
+    timeLimit = counts.QuadPart;
+    timeLimit += static_cast<uint64_t>((mseconds * static_cast<double>(qpcFrequency.QuadPart)) / 1000.0);  // convert time limit from ms into counts
+
+    time = 0;
+    while (time < timeLimit)
+    {
+        Sleep(0);  // cede control to OS for other processes
+        QueryPerformanceCounter(&counts);
+        time = counts.QuadPart;
+    }
+}
+
+INT64 getPerfCounts(void)
+{
+    LARGE_INTEGER time;
+    QueryPerformanceCounter(&time);
+    return time.QuadPart;
+}
+
 // clear all the stat tracking from the sensor
 void Game::ResetSensorStats()
 {
@@ -320,33 +369,42 @@ void Game::ResetSensorStats()
     m_maxSensorTime    = 0.;
 }
 
-void Game::ResetFrameStats()
+void Game::ResetAverageStats()
 {
-    m_frameCount = 0;  // for stats on frames
+    m_frameCount = 1;                                       // for stats on frames
 
-    m_totalFrameTime  = 0.;  // clear accumulator
-    m_totalFrameTime2 = 0.;  // square of above used for variance math
-
-    m_totalRunningTime  = 0.;  // not sure we really ever want to reset this though...
+    m_totalFrameTime = m_lastFrameTime;                     // reset accumulator
+    m_totalFrameTime2 = m_lastFrameTime*m_lastFrameTime;    // square of above used for variance math
+        
+    m_totalRunningTime  = 0.;                               // not sure we really ever want to reset this though...
     m_totalRunningTime2 = 0.;
 
     m_totalRenderTime  = 0.;
     m_totalRenderTime2 = 0.;
 
-    m_presentCount      = 0;  // for stats on Presents
+    m_presentCount      = 0;                                // for stats on Presents
     m_totalPresentTime  = 0.;
     m_totalPresentTime2 = 0.;
     m_minPresentTime    = 1.;
     m_maxPresentTime    = 0.;
 }
 
+// this version is deferred so things settle down a bit first.
+void Game::AutoResetAverageStats(void)
+{
+    // start timer out at current QPC time
+    m_autoResetAverageStatsCounts = getPerfCounts();
+
+}
+
 // clears the accumulators for the current mode  -bound to 's' key
+// immediate, not deferrred.
 void Game::ResetCurrentStats()
 {
     if (m_sensing)
         ResetSensorStats();
     else
-        ResetFrameStats();
+        ResetAverageStats();
 }
 
 // Returns whether the reported display metadata consists of
@@ -468,52 +526,6 @@ void Game::CheckTearingSupport()
 #pragma region Frame Update
 // Executes the basic game-style animation loop.
 
-uint64_t myQPC()
-{
-    static const uint64_t TicksPerSecond = 10000000;  // microseconds
-    LARGE_INTEGER         cycles, qpcFrequency;
-
-    QueryPerformanceFrequency(&qpcFrequency);
-
-    QueryPerformanceCounter(&cycles);
-
-    uint64_t r = cycles.QuadPart * TicksPerSecond;
-
-    return r;
-}
-
-void mySleep(double mseconds)  // All routines named "sleep" must take milliseconds ms
-{
-    LARGE_INTEGER qpcFrequency, counts;  // args to system calls
-    uint64_t      time, timeLimit;       // 64b ints for intermediate checking
-
-    if (mseconds <= 0)  // validate input
-    {
-        Sleep(0);  // in case this is in a loop
-        return;
-    }
-
-    QueryPerformanceFrequency(&qpcFrequency);  // get counts per second
-
-    QueryPerformanceCounter(&counts);
-    timeLimit = counts.QuadPart;
-    timeLimit += static_cast<uint64_t>((mseconds * static_cast<double>(qpcFrequency.QuadPart)) / 1000.0);  // convert time limit from ms into counts
-
-    time = 0;
-    while (time < timeLimit)
-    {
-        Sleep(0);  // cede control to OS for other processes
-        QueryPerformanceCounter(&counts);
-        time = counts.QuadPart;
-    }
-}
-
-INT64 getPerfCounts(void)
-{
-    LARGE_INTEGER time;
-    QueryPerformanceCounter(&time);
-    return time.QuadPart;
-}
 
 bool Game::isMedia()
 {
@@ -580,11 +592,11 @@ void Game::Tick()
     // this is from 2 frames ago since we havent rotated yet
 
     // Compute a refresh rate for the actual monitor v-syncs
-    INT64  monCounts = getPerfCounts();                             // get current time in QPC counts
-    double monDeltaT = (monCounts - m_lastMonCounts) / dFrequency;  // see how long it's been
-    if (monDeltaT > 0.25)                                           // if it's been over 1/4 second
+    INT64  monCounts = getPerfCounts();                                 // get current time in QPC counts
+    double monDeltaT = (monCounts - m_lastMonCounts) / dFrequency;      // see how long it's been
+    if (monDeltaT > 0.256)                                              // if it's been over 1/4 second
     {
-        uint monSyncs     = frameStats.SyncRefreshCount;                       // get count of refreshes
+        uint monSyncs     = frameStats.SyncRefreshCount;                       // get current QPC count of syncs/refreshes
         uint monSyncDelta = monSyncs - static_cast<uint32_t>(m_lastMonSyncs);  // how many syncs since last time
         m_monitorSyncRate = (float)monSyncDelta / monDeltaT;                   // compute sync rate of panel
         m_lastMonCounts   = monCounts;                                         // save state for next time
@@ -751,8 +763,8 @@ void Game::Tick()
                 // compute a new presentDuration that is below the max supported by the display
                 INT64 newDuration = m_mediaPresentDuration;
                 INT64 maxDuration = m_maxDuration;
- //             if (!m_vTotalFixedSupported)                                                 // if true duration API is not supported
- //                 maxDuration = static_cast<int64_t>(10000000.0 / m_minFrameRate );        // approximate for this fn only
+                if (!m_vTotalFixedSupported)                                                 // if true duration API is not supported
+                    maxDuration = static_cast<int64_t>(10000000.0 / m_minFrameRate );        // approximate for this fn only
 
                 maxDuration = (maxDuration * 1002) / 1000;          // apply some padding
 
@@ -964,6 +976,15 @@ void Game::Tick()
     m_lastTargetFrameTime = m_targetFrameTime;
     m_lastLogTime = m_logTime;  // save last value
     m_logTime += m_frameTime;   // time since logging started
+
+    // run timer that delays average stats reset by 1/4 second after each (sub)test change:
+    INT64  nowCounts = getPerfCounts();                                 // get current time in QPC counts
+    double deltaT = (nowCounts - m_autoResetAverageStatsCounts) / dFrequency;      // see how long it's been
+    if (deltaT > 0.250)
+    {
+        ResetAverageStats();
+        m_autoResetAverageStatsCounts = MAXINT64;
+    }
 }
 
 #if 0 
@@ -1512,7 +1533,7 @@ void Game::ChangeSubtest(INT32 increment)
     case TestPattern::FlickerConstant:          // 2
         m_flickerRateIndex += increment;
         m_flickerRateIndex = wrap(m_flickerRateIndex, 0, numMediaRates + 1);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::FlickerVariable:          // 3
@@ -1520,7 +1541,7 @@ void Game::ChangeSubtest(INT32 increment)
         testInt += increment;
         testInt = wrap(testInt, (int)WaveEnum::ZigZag, (int)WaveEnum::Max);
         m_waveEnum = static_cast<WaveEnum>(testInt);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::DisplayLatency:           // 4
@@ -1537,7 +1558,7 @@ void Game::ChangeSubtest(INT32 increment)
         {
             m_latencyTestFrameRate += increment;
             m_latencyTestFrameRate = std::clamp(m_latencyTestFrameRate, 20., 1000.);
-            ResetFrameStats();
+            AutoResetAverageStats();
         }
         break;
 
@@ -1546,7 +1567,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_g2gFrameRate += increment;
         m_g2gFrameRate = std::clamp(m_g2gFrameRate, 20.0, 1000.0);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::FrameDrop:                                                            // 6
@@ -1554,7 +1575,7 @@ void Game::ChangeSubtest(INT32 increment)
         testInt += increment;
         testInt             = wrap(testInt, (int)DropRateEnum::Max, (int)DropRateEnum::p72fps);
         m_frameDropRateEnum = static_cast<DropRateEnum>(testInt);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::FrameLock:  // use media frame rates here                             // 7
@@ -1564,7 +1585,7 @@ void Game::ChangeSubtest(INT32 increment)
         if (m_frameLockRateIndex < 0)
             m_frameLockRateIndex = numMediaRates - 1;
         m_frameLockRateIndex = m_frameLockRateIndex % numMediaRates;
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::MotionBlur:                                                           // 8
@@ -1572,7 +1593,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_motionBlurFrameRate += increment;
         m_motionBlurFrameRate = std::clamp(m_motionBlurFrameRate, 20., 1000.);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::GameJudder:                                                           // 9
@@ -1580,7 +1601,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_judderTestFrameRate += increment;
         m_judderTestFrameRate = std::clamp(m_judderTestFrameRate, 20., 1000.);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     case TestPattern::Tearing:                                                              // 0
@@ -1588,7 +1609,7 @@ void Game::ChangeSubtest(INT32 increment)
             increment *= 10;
         m_tearingTestFrameRate += increment;
         m_tearingTestFrameRate = std::clamp(m_tearingTestFrameRate, 20., 1000.);
-        ResetFrameStats();
+        AutoResetAverageStats();
         break;
 
     }
@@ -2168,9 +2189,6 @@ void setBrightnessSliderPercent(UCHAR percent)
 
 void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 {
-    if (m_newTestSelected)
-        ResetFrameStats();
-
     if (m_showExplanatoryText)
     {
         std::wstring title = L"Start of performance tests\n" + m_hideTextString;
@@ -2203,7 +2221,7 @@ void Game::GenerateTestPattern_ResetInstructions(ID2D1DeviceContext2* ctx)
 void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //************************************* 2
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+        AutoResetAverageStats();
 
     // compute background color
     float c;
@@ -2257,6 +2275,11 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
         title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
         double avgFrameTime = m_totalFrameTime / m_frameCount;
+        if ( avgFrameTime < 0.0001 )
+        {
+            bool x = true;
+            UNREFERENCED_PARAMETER(x);
+        }
         title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
         title << setw(10) << setprecision(5) << avgFrameTime * 1000.f << L"ms";
         double varFrameTime = sqrt(m_frameCount * m_totalFrameTime2 - m_totalFrameTime * m_totalFrameTime) / m_frameCount;
@@ -2331,7 +2354,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
 void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //************************************* 3
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+        AutoResetAverageStats();
 
     // compute background color
     float c;
@@ -2455,7 +2478,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
             ResetSensorStats();
         }
 
-        ResetFrameStats();
+        AutoResetAverageStats();
     }
 
     // compute background color
@@ -2762,7 +2785,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
         if (m_sensorConnected)
         {
 //          m_sensor.Disconnect();
-            ResetFrameStats();
+            AutoResetAverageStats();
         }
     }
 
@@ -2894,7 +2917,7 @@ bool isPrime(int n)
 void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //******************************************* 6
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+        AutoResetAverageStats();
 
     D2D1_RECT_F                  logSize = m_deviceResources->GetLogicalSize();
     ComPtr<ID2D1SolidColorBrush> whiteBrush;  // brush for the "white" color
@@ -3157,7 +3180,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
 void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //******************************************* 7
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+        AutoResetAverageStats();
 
     D2D1_RECT_F                  logSize = m_deviceResources->GetLogicalSize();
     ComPtr<ID2D1SolidColorBrush> whiteBrush;  // brush for the "white" color
@@ -3592,7 +3615,7 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // ********
 void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ****************************************** 0. T.
 {
     if (m_newTestSelected)
-        ResetFrameStats();
+        AutoResetAverageStats();
 
     // get window dimensions in pixels
     auto logSize = m_deviceResources->GetLogicalSize();
