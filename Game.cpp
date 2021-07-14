@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.943"
+#define versionString L"v0.944"
 
 #include "pch.h"
 
@@ -751,8 +751,8 @@ void Game::Tick()
                 // compute a new presentDuration that is below the max supported by the display
                 INT64 newDuration = m_mediaPresentDuration;
                 INT64 maxDuration = m_maxDuration;
- //             if (!m_vTotalFixedSupported)                                                 // if true duration API is not supported
- //                 maxDuration = static_cast<int64_t>(10000000.0 / m_minFrameRate );        // approximate for this fn only
+                if (!m_vTotalFixedSupported)                                                 // if true duration API is not supported
+                    maxDuration = static_cast<int64_t>(10000000.0 / m_minFrameRate );        // approximate for this fn only
 
                 maxDuration = (maxDuration * 1002) / 1000;          // apply some padding
 
