@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.943"
+#define versionString L"v0.946"
 
 #include "pch.h"
 
@@ -757,7 +757,7 @@ void Game::Tick()
                 m_mediaVsyncCount      = 1;
                 m_mediaPresentDuration = static_cast<int64_t>(10000000.0 * m_targetFrameTime);
 
-#define NEW_WAY
+//#define NEW_WAY
 #ifdef NEW_WAY
 #define ROUND_DIV(x, y) (((x) + (y) / 2) / (y)) 
                 // compute a new presentDuration that is below the max supported by the display
@@ -789,7 +789,7 @@ void Game::Tick()
                 {
                     //23.976
                 case 417083:
-                    m_mediaPresentDuration = 208333;  //48 //208542;
+                    m_mediaPresentDuration = 208542;  //47.952;
                     m_mediaVsyncCount      = 2;
                     break;
                     //24
@@ -814,7 +814,7 @@ void Game::Tick()
                     break;
                     //47.952
                 case 208541:
-                    m_mediaPresentDuration = 208333;  //48
+                    m_mediaPresentDuration = 208542;  //47.952
                     m_mediaVsyncCount      = 1;
                     break;
                     //48
@@ -1188,7 +1188,6 @@ float Game::GrayToGrayValue(INT32 index)
     {
         float fDelta = 1.0f/(numGtGValues - 1);
         c = fDelta*index;                           // proportion of the range
-        c = RemoveSRGBCurve( c );                   // remove gamma
 //      c = d * m_outputDesc.MaxLuminance;          // scale to peak luminance
     }
     else  // HDR case:
@@ -1416,7 +1415,8 @@ void Game::Update()
     UNREFERENCED_PARAMETER(ctx);
 
     D2D1_BUFFER_PRECISION prec = D2D1_BUFFER_PRECISION_UNKNOWN;
-    switch (m_deviceResources->GetBackBufferFormat())
+    DXGI_FORMAT format = m_deviceResources->GetBackBufferFormat();
+    switch ( format )
     {
     case DXGI_FORMAT_B8G8R8A8_UNORM:
         prec = D2D1_BUFFER_PRECISION_8BPC_UNORM;
@@ -2234,7 +2234,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
         float sRGBval = 127;
-        c = RemoveSRGBCurve(sRGBval / 255.0f);
+        c = sRGBval / 255.f;                            // norm
     }
 
     ComPtr<ID2D1SolidColorBrush> flickerBrush;
@@ -2367,7 +2367,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
     {
         // code value to attain 10nits on an SDR monitor with 200nit page white
         float sRGBval = 127;
-        c = RemoveSRGBCurve(sRGBval / 255.0f);
+        c = sRGBval / 255.f;                            // norm
     }
 
     ComPtr<ID2D1SolidColorBrush> flickerBrush;
@@ -2492,7 +2492,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)  // ****
     {
         // TODO: change code value to attain 10nits on an SDR monitor with 200nit page white
         float sRGBval = 127;
-        c = RemoveSRGBCurve(sRGBval / 255.0f);
+        c = sRGBval / 255.f;                            // norm
     }
 
     // fill the screen background with 100 nits white
@@ -2800,8 +2800,8 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
     else  // SDR
     {
         // per CTS section 10.2 - changed at meeting on 2021-06-22 to 40nits like other test background
-        float sRGBval = 127.f;                           // in 8-bit encoding
-        c = RemoveSRGBCurve(sRGBval / 255.0f);           // remove gamma
+        float sRGBval = 127.f;                          // in 8-bit encoding
+        c = sRGBval / 255.f;                            // norm
     }
     ComPtr<ID2D1SolidColorBrush> surroundBrush;  // background
     DX::ThrowIfFailed(ctx->CreateSolidColorBrush(D2D1::ColorF(c, c, c), &surroundBrush));

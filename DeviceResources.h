@@ -26,10 +26,12 @@ namespace DX
     class DeviceResources
     {
        public:
-        DeviceResources(DXGI_FORMAT       backBufferFormat  = DXGI_FORMAT_R16G16B16A16_FLOAT,
-                        DXGI_FORMAT       depthBufferFormat = DXGI_FORMAT_D24_UNORM_S8_UINT,
-                        UINT              backBufferCount   = 2,
-                        D3D_FEATURE_LEVEL minFeatureLevel   = D3D_FEATURE_LEVEL_11_0);
+        DeviceResources(
+//          DXGI_FORMAT       backBufferFormat  = DXGI_FORMAT_R16G16B16A16_FLOAT,
+            DXGI_FORMAT       backBufferFormat  = DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT       depthBufferFormat = DXGI_FORMAT_D24_UNORM_S8_UINT,
+            UINT              backBufferCount   = 2,
+            D3D_FEATURE_LEVEL minFeatureLevel   = D3D_FEATURE_LEVEL_11_0);
 
         void CreateDeviceIndependentResources();
         void CreateDeviceResources();

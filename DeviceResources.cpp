@@ -514,6 +514,7 @@ void DX::DeviceResources::ChangeBackBufferFormat(DXGI_FORMAT fmt)
     {
         // Only support formats that Direct2D can use as a target.
     case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
     case DXGI_FORMAT_R16G16B16A16_UNORM:
     case DXGI_FORMAT_R16G16B16A16_FLOAT:
         m_backBufferFormat = fmt;
