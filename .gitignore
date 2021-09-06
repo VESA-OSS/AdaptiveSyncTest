@@ -34,3 +34,5 @@
 # Excel data files
 *.csv
 *.xlsx
+/Notes.txt
+/AdaptSynchNotes.txt

@@ -215,14 +215,16 @@ class Game : public DX::IDeviceNotify
     HANDLE GetFrameLatencyHandle();
 
     // Test pattern control
-    void            SetTestPattern(TestPattern testPattern);
-    void            ChangeTestPattern(bool increment);
-    void            ChangeSubtest(INT32 increment);
-    void            SetShift(bool shift);
-    void            ChangeG2GFromIndex(INT32 increment);
-    void            ChangeG2GToIndex(INT32 increment);
-    void            ChangeG2GInterval(INT32 increment);
-    void            StartTestPattern(void);
+    void SetTestPattern(TestPattern testPattern);
+    void ChangeTestPattern(bool increment);
+    void ChangeSubtest(INT32 increment);
+    void SetShift(bool shift);
+    void ProcessAngleBrackets(INT32 increment);
+    void ProcessSquareBrackets(INT32 increment);
+    void ChangeG2GFromIndex(INT32 increment);
+    void ChangeG2GToIndex(INT32 increment);
+    void ChangeG2GInterval(INT32 increment);
+    void StartTestPattern(void);
     enum VTotalMode GetVTotalMode(void);
     void            ToggleVTotalMode(void);
     void            ToggleLogging(void);
@@ -381,7 +383,6 @@ class Game : public DX::IDeviceNotify
 //  uint64_t    m_presentCounter;       // how many frames the driver has Presented since swapchain create
     double      m_targetFrameRate;      // frame rate we want to achieve
     double      m_targetFrameTime;      // duration of the frame being presented
-    double      m_lastTargetFrameTime;  // save this from last frame as it may match current time
     bool        m_vTotalFixedSupported; // this monitor/GPU supports PresentDuration timings
     VTotalMode  m_vTotalModeRequested;  // UI requests either Fixed frame rate vs Adaptive (g-sync)
     bool        m_vTotalFixedApproved;  // config has approved use of V-Total Fixed
@@ -408,6 +409,10 @@ class Game : public DX::IDeviceNotify
     bool     m_waveUp;        // zig up or down                                         3
     double   m_waveAngle;     // how far along we are in the sine wave                  3
     INT32    m_waveInterval;  // period of these waveforms                              3
+                              
+    // parameters from DisplayID v2.1 to limit size of sudden changes in frame rate
+    double   m_SuccessiveFrameDurationIncreaseInterval;     // ms
+    double   m_SuccessiveFrameDurationDecreaseInterval;     // ms
 
     INT32  m_latencyRateIndex;      // select frame rate in frame latency test          4
     double m_latencyTestFrameRate;  // frame rate specific to this test pattern         4
