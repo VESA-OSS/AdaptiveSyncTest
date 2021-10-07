@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.950"
+#define versionString L"v0.952"
 
 #include "pch.h"
 
@@ -67,8 +67,11 @@ void Game::ConstructorInternal()
     m_vTotalFixedApproved  = false;                 // default to assuming it's not working
     m_MPO                  = false;                 // assume no overlay plane initially
 
-    m_minFrameRate = 10;  // fps      these will be overridden by the detection logic.
+    m_minFrameRate = 10;                // fps      these will be overridden by the detection logic.
     m_maxFrameRate = 120;
+    m_minFrameRateOverride = 0;         // so user can override OS values
+    m_maxFrameRateOverride = 0;         // zero means do not override
+
     m_minDuration  = 0;  // min frame time for Fixed V-Total mode -default to 0 for adaptive only
     m_maxDuration  = 0;  // max frame time for Fixed V-Total mode -default to 0 for adaptive only
     m_autoResetAverageStatsCounts = MAXINT64;
@@ -1068,7 +1071,15 @@ void Game::TickOld()
 // Flicker test for fixed frame rate set                                                                    2
 void Game::UpdateFlickerConstant()
 {
-    auto maxFrameRate = m_maxFrameRate;
+    double maxFrameRate = m_maxFrameRate;
+    double minFrameRate = m_minFrameRate;
+
+    // check for overrides and apply
+    if (m_maxFrameRateOverride != 0)
+        maxFrameRate = m_maxFrameRateOverride;
+    if (m_minFrameRateOverride != 0)
+        minFrameRate = m_minFrameRateOverride;
+
     /* this is not reliable
         if (m_displayFrequency > 20)
         {
@@ -1081,7 +1092,7 @@ void Game::UpdateFlickerConstant()
     switch (m_flickerRateIndex)
     {
     case 0:
-        m_targetFrameRate = m_minFrameRate;  // min reported by implementation
+        m_targetFrameRate = minFrameRate;  // min reported by implementation
         break;
 
     case 1:
@@ -1099,7 +1110,16 @@ void Game::UpdateFlickerConstant()
 // compute frame rate for this Flicker test with variable frame rate:                                       3
 void Game::UpdateFlickerVariable()
 {
-    auto maxFrameRate = m_maxFrameRate;
+    double maxFrameRate = m_maxFrameRate;
+    double minFrameRate = m_minFrameRate;
+
+    // check for overrides and apply
+    if (m_maxFrameRateOverride != 0)
+        maxFrameRate = m_maxFrameRateOverride;
+    if (m_minFrameRateOverride != 0)
+        minFrameRate = m_minFrameRateOverride;
+
+
     /* this is not reliable
         if (m_displayFrequency > 20)
         {
@@ -1124,9 +1144,9 @@ void Game::UpdateFlickerVariable()
         else
         {
             m_targetFrameRate -= 1;
-            if (m_targetFrameRate < m_minFrameRate)
+            if (m_targetFrameRate < minFrameRate)
             {
-                m_targetFrameRate = m_minFrameRate;
+                m_targetFrameRate = minFrameRate;
                 m_waveUp          = true;
             }
         }
@@ -1139,7 +1159,7 @@ void Game::UpdateFlickerVariable()
         if (m_waveUp)
             m_targetFrameRate = maxFrameRate - 4;
         else
-            m_targetFrameRate = m_minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + 2;
 
         // check to see if it is time to switch between Upside and downside of wave
         m_waveCounter--;
@@ -1173,8 +1193,8 @@ void Game::UpdateFlickerVariable()
 
     case WaveEnum::Random:
     {
-        double base = m_minFrameRate + 2;
-        double range = maxFrameRate - 2 - base;
+        double base =  minFrameRate + 2;
+        double range = maxFrameRate - 4 - base;
         m_targetFrameRate = base + range*rand()/RAND_MAX;
 
         // guarantee frame times are not outside the limits reported by DisplayID 2.1
@@ -1201,8 +1221,8 @@ void Game::UpdateFlickerVariable()
 
     case WaveEnum::SineWave:
     {
-        double base  = 0.5 * (maxFrameRate + m_minFrameRate);
-        double range = 0.5 * (maxFrameRate - m_minFrameRate);
+        double base  = 0.5 * (minFrameRate + maxFrameRate);
+        double range = 0.5 * (minFrameRate - maxFrameRate);
 
 //      double angle = m_totalTimeSinceStart * M_PI/3.0;            // 60deg/sec = period of 6s
         // period is (waveinterval) 360 frames per cycle
@@ -1352,24 +1372,33 @@ void Game::UpdateGrayToGray()
 // update routine for Frame Drop test                                                                      6
 void Game::UpdateFrameDrop()
 {
+    double maxFrameRate = m_maxFrameRate;
+    double minFrameRate = m_minFrameRate;
+
+    // check for overrides and apply
+    if (m_maxFrameRateOverride != 0)
+        maxFrameRate = m_maxFrameRateOverride;
+    if (m_minFrameRateOverride != 0)
+        minFrameRate = m_minFrameRateOverride;
+
     // determine what rate to use based on the up/down arrow key setting
     switch (m_frameDropRateEnum)
     {
     case DropRateEnum::Max:
-        m_targetFrameRate = m_maxFrameRate;     // max reported by implementation
+        m_targetFrameRate = maxFrameRate;       // max reported by implementation
         break;
     case DropRateEnum::Random:                  // pick a random frame duration within the valid range
         if ( ((float)rand()/RAND_MAX) > 0.50 )  // randomly choose between Min and Max
-            m_targetFrameRate = m_minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + 2;
         else
-            m_targetFrameRate = m_maxFrameRate - 4;
+            m_targetFrameRate = maxFrameRate - 4;
         break;
     case DropRateEnum::SquareWave:              // stress test alternating between 24 and max
         if (m_frameCounter & 0x01)              // alternate between Min and Max
 //      if (m_frameCounter % 3 == 0 )
-            m_targetFrameRate = m_minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + 2;
         else
-            m_targetFrameRate = m_maxFrameRate - 4;
+            m_targetFrameRate = maxFrameRate - 4;
         break;
     case DropRateEnum::p48fps:
         m_targetFrameRate = 48;
@@ -1542,6 +1571,14 @@ void Game::ProcessAngleBrackets(INT32 increment)
 {
     switch (m_currentTest)
     {
+    case TestPattern::ConnectionProperties:                                 // D
+        if (m_shiftKey)
+            increment *= 10;
+        m_maxFrameRateOverride += increment;
+        if (m_maxFrameRateOverride < 0.5)           // snap to zero so we can use == for no override
+            m_maxFrameRateOverride = 0;
+        break;
+
     case TestPattern::FlickerVariable:                                      // 3
         if (m_shiftKey)
             increment *= 8;
@@ -1613,15 +1650,16 @@ void Game::SetShift(bool shift)
 // handle the up/down arrow key inputs (different for each test pattern)
 void Game::ChangeSubtest(INT32 increment)
 {
-    int testInt, testTier;
+    int testInt;
 
     switch (m_currentTest)
     {
-    case TestPattern::PanelCharacteristics:     // 1
-        testTier = (int)m_testingTier;
-        testTier += increment;
-        testTier = clamp(testTier, (int)TestingTier::DisplayHDR400, (int)TestingTier::DisplayHDR10000);
-        m_testingTier = (TestingTier)testTier;
+    case TestPattern::ConnectionProperties:                                 // D
+        if (m_shiftKey)
+            increment *= 10;
+        m_minFrameRateOverride += increment;
+        if (m_minFrameRateOverride < 0.5)           // snap to zero so we can use == for no override
+            m_minFrameRateOverride = 0;
         break;
 
     case TestPattern::FlickerConstant:          // 2
@@ -2137,6 +2175,16 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         maxRate = 10000000.f / m_minDuration;
     text << setw(7) << setprecision(3) << maxRate << "Hz ";
     text << setw(8) << setprecision(4) << m_minDuration / 10000.0 << "ms\n";  // scale units from hundreds of nanoseconds to ms
+
+    // print the override values if present
+    text << "\nOverrides of OS range: -set via up/down arrow keys\n";
+    text << "  From Min:  " << fixed;
+    text << setw(7) << setprecision(3) << m_minFrameRateOverride << "Hz ";
+    text << setw(8) << setprecision(4) << 1000./m_minFrameRateOverride << "ms\n";  // ms
+    text << "   To  Max:  ";
+    text << setw(7) << setprecision(3) << m_maxFrameRateOverride << "Hz ";
+    text << setw(8) << setprecision(4) << 1000./m_maxFrameRateOverride << "ms\n";  // ms
+
 
     RenderText(ctx, m_monospaceFormat.Get(), text.str(), m_largeTextRect);
 
@@ -3808,7 +3856,7 @@ void Game::GenerateTestPattern_EndOfTest(ID2D1DeviceContext2* ctx)
     m_newTestSelected = false;
 }
 
-void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
+void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)      // **************************************** W
 {
     // compute background color
     float c = 0.5;
@@ -3867,7 +3915,7 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)
 
 // this is invoked via the C key
 // it just draws a black screen for 60seconds.
-void Game::GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx)  //              'C'
+void Game::GenerateTestPattern_Cooldown(ID2D1DeviceContext2* ctx)    // **************************************** C
 {
     if (m_showExplanatoryText)
     {
