@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.952"
+#define versionString L"v0.953"
 
 #include "pch.h"
 
@@ -128,8 +128,8 @@ void Game::ConstructorInternal()
     m_sweepPos             = 0;                  // position of bar in Tearing test             0
 
     m_targetFrameRate = 60.f;
-    m_frameTime       = 0.016666;
-    m_lastFrameTime   = 0.016666;
+    m_frameTime       = 0.016667;
+    m_lastFrameTime   = 0.016667;
     m_sleepDelay      = 16.0;   // ms simulate workload of app (just used for some tests)
     m_frameCount      = 0;      // number of frames in current stats
     m_presentCount    = 0;      // number of Presents in current stats
@@ -1095,12 +1095,8 @@ void Game::UpdateFlickerConstant()
         m_targetFrameRate = minFrameRate;  // min reported by implementation
         break;
 
-    case 1:
-        m_targetFrameRate = maxFrameRate;  // max reported by implementation
-        break;
-
     default:
-        m_targetFrameRate = mediaRefreshRates[m_flickerRateIndex - 2];
+        m_targetFrameRate = mediaRefreshRates[m_flickerRateIndex - 1];
         break;
     }
 
@@ -1281,8 +1277,18 @@ float Game::GrayToGrayValue(INT32 index)
 // update routine for Gray2Gray Test pattern                                                               5
 void Game::UpdateGrayToGray()
 {
+    double maxFrameRate = m_maxFrameRate;
+    double minFrameRate = m_minFrameRate;
+
+    // check for overrides and apply
+    if (m_maxFrameRateOverride != 0)
+        maxFrameRate = m_maxFrameRateOverride;
+    if (m_minFrameRateOverride != 0)
+        minFrameRate = m_minFrameRateOverride;
+
     if (m_autoG2G)  // if we are in auto-sequence
     {
+        m_targetFrameRate = maxFrameRate;  // per CTS
 /*
         update the timer
         if it has run down, then
@@ -1291,7 +1297,7 @@ void Game::UpdateGrayToGray()
             Increment the FromIndex
                 if that overflows, increment the ToIndex
 */
-        //      m_testTimeRemainingSec -= m_frameTime;
+//      m_testTimeRemainingSec -= m_frameTime;
         if (m_g2gCounter <= 0)  // counter ran down, so change something
         {
             if (m_g2gFrom)
@@ -1315,28 +1321,30 @@ void Game::UpdateGrayToGray()
             {
                 m_g2gCounter = static_cast<int32_t>(0.25 * m_targetFrameRate);  // reset counter to take 250ms at ANY frame rate
                 if (m_g2gCounter & 0x01)        // if it is odd,
-                    m_g2gCounter--;             // subtract one to make it even
+                    m_g2gCounter++;             // add one to make it even
             }
             //              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;
         }
 
-        m_targetFrameRate = m_maxFrameRate;  // per CTS
     }
     else  // we are in manual state setting mode (not auto sequence)
     {
-//      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
-//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
-//      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
-//      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
-//      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
+        //      m_g2gFrom = (m_frameCounter >> 4) & 1;                           // switch every 16 frames
+        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 8 frames
+        //      m_g2gFrom = (m_frameCounter >> 2) & 1;                           // switch every 4 frames
+        //      m_g2gFrom = (m_frameCounter >> 1) & 1;                           // switch every 2 frames
+        //      m_g2gFrom = (m_frameCounter     ) & 1;                           // switch every other frame
 
         if (m_g2gCounter <= 0)
         {
-            m_g2gFrom    = !m_g2gFrom;     // flip to showing the other color
+            m_g2gFrom = !m_g2gFrom;     // flip to showing the other color
             m_g2gCounter = m_g2gInterval;  // reset the interval timer
         }
 
         m_targetFrameRate = m_g2gFrameRate;  // per CTS
+        if (m_targetFrameRate > maxFrameRate )
+            m_targetFrameRate = maxFrameRate;
+
     }
 
     // define color for test patch
@@ -1664,7 +1672,7 @@ void Game::ChangeSubtest(INT32 increment)
 
     case TestPattern::FlickerConstant:          // 2
         m_flickerRateIndex += increment;
-        m_flickerRateIndex = wrap(m_flickerRateIndex, 0, numMediaRates + 1);
+        m_flickerRateIndex = wrap(m_flickerRateIndex, 0, numMediaRates );
         AutoResetAverageStats();
         break;
 
@@ -1846,15 +1854,21 @@ void Game::UpdateDxgiRefreshRatesInfo()
     m_minDuration = closestLargerPresentDuration;
 
     // this may need to be adjusted based on the VESA criteria.  TODO
-    if (m_minDuration > 0)
+    if (m_minDuration > 0)                              // if Durations are supported,
+    {
         m_vTotalFixedSupported = true;
+        m_minFrameRate = 10000000.f / m_maxDuration;    // then these should be non-zero
+        m_maxFrameRate = 10000000.f / m_minDuration;
+    }
 
     // initialize those scenes that should default to max frame rate
     // TODO: Keep this below actual frame rate of OS!
-    if (m_latencyTestFrameRate < 5)  // 4
-        m_latencyTestFrameRate = m_maxFrameRate;
 
-    //  m_latencyTestFrameRate = m_displayFrequency;    // default this to current OS setting
+    // set those rates that default to max (and apply override)
+
+    if (m_latencyTestFrameRate < 5)                     // 4
+        m_latencyTestFrameRate = m_maxFrameRate;
+//  m_latencyTestFrameRate = m_displayFrequency;                    // default this to current OS setting
 
     if (m_g2gFrameRate < 5)                             // 5
         m_g2gFrameRate = m_maxFrameRate;
@@ -2025,7 +2039,7 @@ bool Game::CheckHDR_On()
     return HDR_On;
 }
 
-void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  // 1
+void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  // ******************************* 1
 {
     std::wstringstream text;
 
@@ -2392,14 +2406,13 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
         title << versionString;
         title << L" Test 2 - Flicker at Constant Refresh Rate: ";
 
+//      title << m_flickerRateIndex;                    // debug printf
         switch (m_flickerRateIndex)
         {
         case 0:
             title << " Minimum";
             break;
-        case 1:
-            title << " Maximum";
-            break;
+
         default:
             break;
         }
@@ -2544,6 +2557,9 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
             title << L"  E R R O R ! \n";
             break;
         }
+
+        // would be nice to show the min max rates for square and sine wave,
+        // but those values are not easy to get from here
 
         if (m_targetFrameRate > m_displayFrequency)
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
@@ -3540,6 +3556,9 @@ void Game::GenerateTestPattern_EndOfMandatoryTests(ID2D1DeviceContext2* ctx)
 
 void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ***************************************** 8.
 {
+    if (m_newTestSelected)
+        AutoResetAverageStats();
+
     // get window dimensions in pixels
     auto   logSize = m_deviceResources->GetLogicalSize();
     float2 center  = float2(logSize.right - logSize.left, logSize.bottom - logSize.top) * 0.5f;
