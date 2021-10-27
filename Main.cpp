@@ -398,6 +398,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case 0x4C:  // 'L'
             game->ToggleLogging();
             break;
+        case 0x4D:  // 'M'
+            game->ToggleMargin();
+            break;
         case 0x52:  // 'R'
             game->ResetCurrentStats();
             break;

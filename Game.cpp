@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.953"
+#define versionString L"v0.954"
 
 #include "pch.h"
 
@@ -88,6 +88,7 @@ void Game::ConstructorInternal()
     m_waveUp           = true;              // for use in zigzag wave                           3
     m_waveAngle        = 0.;                // how far along we are in the sine wave            3
     m_waveInterval     = 360;               // duration of sine wave period in frames           3
+    m_frameRateMargin = 2.0;                // keeps from getting too close to the limits       3
 
     // parameters from DisplayID v2.1 to limit size of sudden changes in frame rate
     m_SuccessiveFrameDurationIncreaseInterval = 50;
@@ -290,6 +291,14 @@ void Game::ToggleLogging()
         fclose(m_logFile);
         m_logging = false;
     }
+}
+
+void Game::ToggleMargin()
+{
+    if (m_frameRateMargin > 0.015625)       // 1/64
+        m_frameRateMargin = 0.0;
+    else if (m_frameRateMargin <= 0.015625)
+        m_frameRateMargin = 2.0;
 }
 
 void Game::TogglePause()
@@ -755,7 +764,7 @@ void Game::Tick()
             // use PresentDuration mode in some tests
             UINT closestSmallerDuration = 0, closestLargerDuration = 0;
             if (m_currentTest == TestPattern::FlickerConstant  // 2
-  //            || m_currentTest == TestPattern::FlickerVariable                                  // 3
+//              || m_currentTest == TestPattern::FlickerVariable                                  // 3
                 || m_currentTest == TestPattern::DisplayLatency  // 4
                 || m_currentTest == TestPattern::FrameLock       // 7
                 || m_currentTest == TestPattern::MotionBlur)     // 8
@@ -842,7 +851,7 @@ void Game::Tick()
                     //60
                 //case 166638:
                 case 166666:
-                    m_mediaPresentDuration = 166667;  //60
+                    m_mediaPresentDuration = 166666;  //60
                     m_mediaVsyncCount      = 1;
                     break;
 
@@ -853,6 +862,7 @@ void Game::Tick()
 
                 hr = scMedia->CheckPresentDurationSupport(
                     static_cast<uint32_t>(m_mediaPresentDuration), &closestSmallerDuration, &closestLargerDuration);
+                    winrt::check_hresult(hr);
 
                 hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
                 winrt::check_hresult(hr);
@@ -1153,9 +1163,9 @@ void Game::UpdateFlickerVariable()
     {
         // set frame rate based on wave
         if (m_waveUp)
-            m_targetFrameRate = maxFrameRate - 4;
+            m_targetFrameRate = maxFrameRate - 2*m_frameRateMargin;
         else
-            m_targetFrameRate = minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + m_frameRateMargin;
 
         // check to see if it is time to switch between Upside and downside of wave
         m_waveCounter--;
@@ -1189,8 +1199,8 @@ void Game::UpdateFlickerVariable()
 
     case WaveEnum::Random:
     {
-        double base =  minFrameRate + 2;
-        double range = maxFrameRate - 4 - base;
+        double base =  minFrameRate + m_frameRateMargin;
+        double range = maxFrameRate - 2*m_frameRateMargin - base;
         m_targetFrameRate = base + range*rand()/RAND_MAX;
 
         // guarantee frame times are not outside the limits reported by DisplayID 2.1
@@ -1397,16 +1407,16 @@ void Game::UpdateFrameDrop()
         break;
     case DropRateEnum::Random:                  // pick a random frame duration within the valid range
         if ( ((float)rand()/RAND_MAX) > 0.50 )  // randomly choose between Min and Max
-            m_targetFrameRate = minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + m_frameRateMargin;
         else
-            m_targetFrameRate = maxFrameRate - 4;
+            m_targetFrameRate = maxFrameRate - 2*m_frameRateMargin;
         break;
     case DropRateEnum::SquareWave:              // stress test alternating between 24 and max
         if (m_frameCounter & 0x01)              // alternate between Min and Max
 //      if (m_frameCounter % 3 == 0 )
-            m_targetFrameRate = minFrameRate + 2;
+            m_targetFrameRate = minFrameRate + m_frameRateMargin;
         else
-            m_targetFrameRate = maxFrameRate - 4;
+            m_targetFrameRate = maxFrameRate - 2*m_frameRateMargin;
         break;
     case DropRateEnum::p48fps:
         m_targetFrameRate = 48;
@@ -1872,6 +1882,12 @@ void Game::UpdateDxgiRefreshRatesInfo()
 
     if (m_g2gFrameRate < 5)                             // 5
         m_g2gFrameRate = m_maxFrameRate;
+
+    // set up default switch interval based on max frame rate.
+    m_g2gInterval = static_cast<int32_t>(0.25 * m_maxFrameRate);  // reset counter to take 250ms at ANY frame rate
+    if (m_g2gInterval & 0x01)       // if it is odd,
+        m_g2gInterval++;            // add one to make it even
+
 
     if (m_motionBlurFrameRate < 5)                      // 8
         m_motionBlurFrameRate = m_maxFrameRate;
@@ -2998,7 +3014,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
             title << L"From    ";
         else
             title << L"     To ";
-        title << fixed << setw(m_g2gCounter + 1) << m_g2gCounter;
+        title << fixed << setw(m_g2gCounter + 1) << (m_g2gCounter + 1);
 
         if (m_targetFrameRate > m_displayFrequency)
             title << L"\n\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n";

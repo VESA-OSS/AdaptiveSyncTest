@@ -228,6 +228,7 @@ class Game : public DX::IDeviceNotify
     enum VTotalMode GetVTotalMode(void);
     void            ToggleVTotalMode(void);
     void            ToggleLogging(void);
+    void            ToggleMargin(void);
     void            TogglePause(void);
     void            ToggleSensing(void);
     void            ToggleAutoG2G(void);
@@ -404,16 +405,17 @@ class Game : public DX::IDeviceNotify
     UINT m_minDuration;         // min frame time for Fixed V-Total mode
     UINT m_maxDuration;         // max frame time for Fixed V-Total mode
 
-    INT32 m_flickerRateIndex;  // select frame rate in flicker test                     2
+    INT32 m_flickerRateIndex;   // select frame rate in flicker test                      2
 
     INT64 m_autoResetAverageStatsCounts; // last time we started the statscount auto-reset timer
 
-    INT32    m_waveCounter;   // control for square wave                                3
-    WaveEnum m_waveEnum;      // zigzag vs square wave vs random                        3
-    bool     m_waveUp;        // zig up or down                                         3
-    double   m_waveAngle;     // how far along we are in the sine wave                  3
-    INT32    m_waveInterval;  // period of these waveforms                              3
-                              
+    INT32    m_waveCounter;     // control for square wave                                3
+    WaveEnum m_waveEnum;        // zigzag vs square wave vs random                        3
+    bool     m_waveUp;          // zig up or down                                         3
+    double   m_waveAngle;       // how far along we are in the sine wave                  3
+    INT32    m_waveInterval;    // period of these waveforms                              3
+    double m_frameRateMargin;   // keeps from getting too close to the limits             3
+
     // parameters from DisplayID v2.1 to limit size of sudden changes in frame rate
     double   m_SuccessiveFrameDurationIncreaseInterval;     // ms
     double   m_SuccessiveFrameDurationDecreaseInterval;     // ms
