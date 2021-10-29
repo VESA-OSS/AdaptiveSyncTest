@@ -1250,8 +1250,10 @@ void Game::UpdateFlickerVariable()
 
     case WaveEnum::SineWave:
     {
-        double base  = 0.5 * (minFrameRate + maxFrameRate);
-        double range = 0.5 * (minFrameRate - maxFrameRate);
+        double minFR = minFrameRate + m_frameRateMargin;
+        double maxFR = maxFrameRate - 2*m_frameRateMargin;
+        double base  = 0.5 * (minFR + maxFR);
+        double range = 0.5 * (maxFR - minFR);
 
 //      double angle = m_totalTimeSinceStart * M_PI/3.0;            // 60deg/sec = period of 6s
         // period is (waveinterval) 360 frames per cycle
