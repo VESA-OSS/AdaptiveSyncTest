@@ -97,8 +97,8 @@ class Game : public DX::IDeviceNotify
     // Media rate Flicker test indexes into these arrays using its FlickerRateIndex
 
 #define numMediaRates 10 // number of refresh rates in the media rate test               2, 7
-    double mediaRefreshRates[numMediaRates]     = {23.976, 24.0, 25.0, 29.97, 30.0, 47.952, 48.0, 50.0, 59.94, 60.0};
-    UINT   mediaPresentDurations[numMediaRates] = {417083, 416666, 400000, 333666, 333333, 208542, 208333, 200000, 166833, 166667};
+    double mediaRefreshRates[numMediaRates]     = { 23.976024, 24.0, 25.0, 29.970030, 30.0, 47.952048, 48.0, 50.0, 59.940060, 60.0 };
+    UINT   mediaPresentDurations[numMediaRates] = { 417083, 416666, 400000, 333666, 333333, 208541, 208333, 200000, 166833, 166666 };
 
 #define numGtGValues 5  // number of levels in the G2G tests                            5
 

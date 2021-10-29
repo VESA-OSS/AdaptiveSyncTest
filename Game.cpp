@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.954"
+#define versionString L"v0.955"
 
 #include "pch.h"
 
@@ -63,7 +63,7 @@ void Game::ConstructorInternal()
     m_mediaVsyncCount = 1;       // number of times to repeat the same frame for media playback
 
     m_vTotalFixedSupported = false;                 // assume we don't support fixed V-Total mode
-    m_vTotalModeRequested  = VTotalMode::Adaptive;  // default to stay Adaptive mode
+    m_vTotalModeRequested  = VTotalMode::Fixed;     // default to try for PresentDuration mode
     m_vTotalFixedApproved  = false;                 // default to assuming it's not working
     m_MPO                  = false;                 // assume no overlay plane initially
 
@@ -236,6 +236,9 @@ void Game::ToggleVTotalMode()
         // tell deviceResources object so it can handle next swapchain resize properly  TODO it probably has to be recreated...
         m_deviceResources->SetVTotalMode(false);
     }
+
+    // clear the stats counters since we are changing policy
+    AutoResetAverageStats();
 }
 
 void Game::ToggleLogging()
@@ -757,17 +760,18 @@ void Game::Tick()
 
             // TODO:  FrameTime should not be a member var
 
-
             // default to no app frame-doubling
             m_mediaVsyncCount = 1;
 
             // use PresentDuration mode in some tests
             UINT closestSmallerDuration = 0, closestLargerDuration = 0;
-            if (m_currentTest == TestPattern::FlickerConstant  // 2
-//              || m_currentTest == TestPattern::FlickerVariable                                  // 3
-                || m_currentTest == TestPattern::DisplayLatency  // 4
-                || m_currentTest == TestPattern::FrameLock       // 7
-                || m_currentTest == TestPattern::MotionBlur)     // 8
+            if (m_vTotalFixedSupported &&
+                m_vTotalModeRequested == VTotalMode::Fixed &&
+                ( m_currentTest == TestPattern::FlickerConstant     // 2
+//              || m_currentTest == TestPattern::FlickerVariable    // 3
+                || m_currentTest == TestPattern::DisplayLatency     // 4
+                || m_currentTest == TestPattern::FrameLock          // 7
+                || m_currentTest == TestPattern::MotionBlur) )      // 8
             {
                 m_mediaVsyncCount      = 1;
                 m_mediaPresentDuration = static_cast<int64_t>(10000000.0 * m_targetFrameTime);
@@ -804,32 +808,35 @@ void Game::Tick()
                 {
                     //23.976
                 case 417083:
-                    m_mediaPresentDuration = 208542;  //47.952;
-                    m_mediaVsyncCount      = 2;
+                    m_mediaPresentDuration = 208541;  // 47.952
+//                  m_mediaPresentDuration = 417083;  // 23.976 -> 47.952
+                    m_mediaVsyncCount = 2;
                     break;
                     //24
                 case 416666:
-                    m_mediaPresentDuration = 208333;  //48
-                    m_mediaVsyncCount      = 2;
+                    m_mediaPresentDuration = 208333;  // 24 -> 48
+                    m_mediaVsyncCount = 2;
                     break;
                     //25
                 case 400000:
-                    m_mediaPresentDuration = 200000;  //50
-                    m_mediaVsyncCount      = 2;
+                    m_mediaPresentDuration = 200000;  // 25 -> 50
+                    m_mediaVsyncCount = 2;
                     break;
                     //29.97
-                case 333667:
-                    m_mediaPresentDuration = 166834;  //59.94
-                    m_mediaVsyncCount      = 2;
+                case 333666:
+                    m_mediaPresentDuration = 166834;  // 29.97 -> 59.94
+                    m_mediaVsyncCount = 2;
                     break;
                     //30
                 case 333333:
-                    m_mediaPresentDuration = 166667;  //60
-                    m_mediaVsyncCount      = 2;
+                    m_mediaPresentDuration = 166667;  // 30 -> 60
+                    m_mediaVsyncCount = 2;
                     break;
                     //47.952
+                case 208540:
                 case 208541:
-                    m_mediaPresentDuration = 208542;  //47.952
+                case 208542:
+                    m_mediaPresentDuration = 208541;  //47.952
                     m_mediaVsyncCount      = 1;
                     break;
                     //48
@@ -845,12 +852,15 @@ void Game::Tick()
                     //59.94
                 //case 166805:
                 case 166833:
-                    m_mediaPresentDuration = 166834;  //59.94
+                case 166834:
+                    m_mediaPresentDuration = 166833;  //59.94
                     m_mediaVsyncCount      = 1;
                     break;
                     //60
                 //case 166638:
+                case 166665:
                 case 166666:
+                case 166667:
                     m_mediaPresentDuration = 166666;  //60
                     m_mediaVsyncCount      = 1;
                     break;
@@ -860,14 +870,25 @@ void Game::Tick()
                 }
 #endif  // NEW_WAY
 
+                // confirm that this rate is actually supported
                 hr = scMedia->CheckPresentDurationSupport(
                     static_cast<uint32_t>(m_mediaPresentDuration), &closestSmallerDuration, &closestLargerDuration);
                     winrt::check_hresult(hr);
 
-                hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
-                winrt::check_hresult(hr);
+                // Check that one of the neighboring Durations matches our goal
+                if ( (m_mediaPresentDuration == closestSmallerDuration)
+                  || (m_mediaPresentDuration == closestLargerDuration)   )
+                {
+                    // then the rate is valid and we can set it
+                    hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
+                    winrt::check_hresult(hr);
+                }
+                else
+                    // PresentDuration is not to be used
+                    m_mediaPresentDuration = 0;
             }
             else
+                // PresentDuration is not to be used
                 m_mediaPresentDuration = 0;
 
             hr = scMedia->GetFrameStatisticsMedia(&mediaStats);
@@ -878,6 +899,8 @@ void Game::Tick()
             }
             else  // use a sleep timer
             {
+                m_vTotalFixedApproved = false;
+
                 // if we didnt get PresentDuration mode, maybe we got an MPO:
                 m_MPO = false;
                 if (mediaStats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY)
@@ -1839,9 +1862,6 @@ void Game::UpdateDxgiRefreshRatesInfo()
                 m_minFrameRate = rate;
         }
     }
-//  m_maxFrameRate = 165;                                                   // TODO: test an odd number on occasion
-    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
-
     // TODO tag which mode is current (defaults to highest for now)
 
     // print the fixed rate V-Total video frame rate range supported
@@ -1870,6 +1890,9 @@ void Game::UpdateDxgiRefreshRatesInfo()
         m_minFrameRate = 10000000.f / m_maxDuration;    // then these should be non-zero
         m_maxFrameRate = 10000000.f / m_minDuration;
     }
+
+    //  m_maxFrameRate = 165;                           // TODO: test an odd number on occasion
+    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
 
     // initialize those scenes that should default to max frame rate
     // TODO: Keep this below actual frame rate of OS!
@@ -2183,10 +2206,7 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         }
     }
 
-    m_FrameRateRatio = m_maxFrameRate / m_minFrameRate;
-    text << "  Ratio:" << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
-
-    if (m_maxFrameRate > m_displayFrequency)
+    if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
         text << L"\nWARNING: **** Current Windows Settings may block testing of monitor peak rate ****\n";
 
     // print the video frame rate range supported
@@ -2205,6 +2225,8 @@ void Game::GenerateTestPattern_ConnectionProperties(ID2D1DeviceContext2* ctx)  /
         maxRate = 10000000.f / m_minDuration;
     text << setw(7) << setprecision(3) << maxRate << "Hz ";
     text << setw(8) << setprecision(4) << m_minDuration / 10000.0 << "ms\n";  // scale units from hundreds of nanoseconds to ms
+
+    text << "\n     Ratio: " << fixed << setw(8) << setprecision(3) << m_FrameRateRatio << "\n";
 
     // print the override values if present
     text << "\nOverrides of OS range: -set via up/down arrow keys\n";
@@ -2436,7 +2458,7 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
             title << " Below Min - likely doubled.";
         title << "\n";
 
-        if ( m_targetFrameRate > m_displayFrequency )
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
@@ -2577,7 +2599,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
         // would be nice to show the min max rates for square and sine wave,
         // but those values are not easy to get from here
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
@@ -3016,7 +3038,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
             title << L"     To ";
         title << fixed << setw(m_g2gCounter + 1) << (m_g2gCounter + 1);
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\n\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n";
 
         title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
@@ -3303,7 +3325,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
             break;
         }
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
@@ -3498,7 +3520,7 @@ void Game::GenerateTestPattern_FrameLock(ID2D1DeviceContext2* ctx)  //**********
         title << versionString;
         title << L" Test 7 - Framerate Lock or Jitter Test\n";
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
@@ -3627,7 +3649,7 @@ void Game::GenerateTestPattern_MotionBlur(ID2D1DeviceContext2* ctx)  // ********
         title << versionString;
         title << L" Test 8 - Motion Blur Tuning\n";
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
@@ -3749,7 +3771,7 @@ void Game::GenerateTestPattern_GameJudder(ID2D1DeviceContext2* ctx)  // ********
         if (bBFI)
             title << "  BFI";
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\n\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n";
 
         title << fixed;
@@ -3827,7 +3849,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ***********
         title << versionString;
         title << L" Test 10 - Tearing Check\n";
 
-        if (m_targetFrameRate > m_displayFrequency)
+        if (m_targetFrameRate > (double)(m_displayFrequency + 0.1))
             title << L"\nWARNING: **** Windows Settings prevent operation over " << m_displayFrequency << L"Hz ****\n\n";
 
         title << fixed;
