@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.959"
+#define versionString L"v0.960"
 
 #include "pch.h"
 
@@ -175,6 +175,7 @@ void Game::ConstructorInternal()
 	m_hideTextString = std::wstring(L"Press SPACE to hide this text.");
 
 	m_deviceResources->RegisterDeviceNotify(this);
+
 }
 
 // Shuffle all the entries in the frame log down to make room for one more
@@ -686,7 +687,8 @@ void Game::Tick()
 			//          UINT syncInterval = 0;
 			//          UINT presentFlags;
 
-			if (m_mediaPresentDuration != 0)
+			if (m_mediaPresentDuration != 0
+				)
 			{
 				hr = m_deviceResources->Present(m_mediaVsyncCount, DXGI_PRESENT_USE_DURATION);
 			}
@@ -762,52 +764,51 @@ void Game::Tick()
 
 			// use PresentDuration mode in some tests
 			UINT closestSmallerDuration = 0, closestLargerDuration = 0;
-			if (m_vTotalFixedSupported && 
-				(m_currentTest == TestPattern::FlickerConstant   // 2
+			if (m_vTotalFixedSupported && (
+				m_currentTest == TestPattern::FlickerConstant    // 2
 				|| m_currentTest == TestPattern::DisplayLatency  // 4
 				|| m_currentTest == TestPattern::FrameLock	     // 7
-				|| m_currentTest == TestPattern::MotionBlur))    // 8
+				|| m_currentTest == TestPattern::MotionBlur))     // 8
 			{
 				m_mediaVsyncCount = 1;
-				m_mediaPresentDuration = static_cast<int64_t>(10000000.0 * m_targetFrameTime);
 
 				// for fixed presentation time , find the number of frames to duplicate to get in the range
-				if (m_mediaPresentDuration != 0)
+				if (m_targetFrameTime != 0)
 				{
-					INT64 tempDuration = m_mediaPresentDuration;
+					INT64 tempDuration = (INT64)(10000000.0 * m_targetFrameTime);
 					while (tempDuration > m_maxDuration)
 					{
 						m_mediaVsyncCount++;
-						tempDuration = m_mediaPresentDuration / m_mediaVsyncCount;
+						tempDuration = (INT64)(10000000.0 * m_targetFrameTime / m_mediaVsyncCount);
 					}
-					m_mediaPresentDuration = m_mediaPresentDuration / m_mediaVsyncCount;
 				}
 
+				m_mediaPresentDuration = (INT64)(10000000.0 * m_targetFrameTime / m_mediaVsyncCount);
 				if (m_mediaPresentDuration > 0)
 				{
-					// confirm that this rate is actually supported
-					hr = scMedia->CheckPresentDurationSupport(
-						static_cast<uint32_t>(m_mediaPresentDuration), &closestSmallerDuration, &closestLargerDuration);
+						// confirm that this rate is actually supported
+						hr = scMedia->CheckPresentDurationSupport(
+							static_cast<uint32_t>(m_mediaPresentDuration), &closestSmallerDuration, &closestLargerDuration);
 
-					// Check that one of the neighboring Durations matches our goal
-					if (hr == S_OK && (closestLargerDuration != 0 || closestSmallerDuration != 0))
-					{
-						if ((m_mediaPresentDuration - closestSmallerDuration) < (closestLargerDuration - m_mediaPresentDuration))
+						// Check that one of the neighboring Durations matches our goal
+						if (hr == S_OK && (closestLargerDuration != 0 || closestSmallerDuration != 0))
 						{
-							m_mediaPresentDuration = closestSmallerDuration;
-						}
-						else
-						{
-							m_mediaPresentDuration = closestLargerDuration;
-						}
+							if ((m_mediaPresentDuration - closestSmallerDuration) < (closestLargerDuration - m_mediaPresentDuration))
+							{
+								m_mediaPresentDuration = closestSmallerDuration;
+							}
+							else
+							{
+								m_mediaPresentDuration = closestLargerDuration;
+							}
 
-						// then the rate is valid and we can set it
-						hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
-						if (hr != S_OK)
-						{
-							m_mediaPresentDuration = 0;
+							// then the rate is valid and we can set it
+							hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
+							if (hr != S_OK)
+							{
+								m_mediaPresentDuration = 0;
+							}
 						}
-					}
 				}
 			}
 			else
@@ -821,54 +822,54 @@ void Game::Tick()
 				}
 			}
 
-			hr = scMedia->GetFrameStatisticsMedia(&mediaStats);
-			if (hr == S_OK && m_mediaPresentDuration > 0)
-			{
-				// we can use the wait model so indicate on UI
-				m_frameLog[0]->sleepCounts = getPerfCounts();
-			}
-			else  // use a sleep timer
-			{
-				m_vTotalFixedApproved = false;
-
-				// if we didnt get PresentDuration mode, maybe we got an MPO:
-				m_MPO = false;
-				if (mediaStats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY)
+				hr = scMedia->GetFrameStatisticsMedia(&mediaStats);
+				if (hr == S_OK && m_mediaPresentDuration > 0)
 				{
-					m_MPO = true;
+					// we can use the wait model so indicate on UI
+					m_frameLog[0]->sleepCounts = getPerfCounts();
 				}
-
-				double avgRunTime;		 // how long the app spends not sleeping
-				m_mediaPresentDuration = 0;	 // indicate to not use PresentDuration model
-
-				if (m_frameCount > 1)
-					avgRunTime = m_totalRunningTime / m_frameCount;
-				else
-					avgRunTime = 0.0013;  // aka 1.3ms
-
-					// apply frame doubling if frame rate is less than EDID reported minimum
-				double targetFrameTime = m_targetFrameTime;
-				double maxFrameTime = 1.001 / m_minFrameRate;  // as repotted by EDID
-				if (targetFrameTime > maxFrameTime)
+				else  // use a sleep timer
 				{
-					targetFrameTime /= 2.0;	 // halve the period to double the frame rate
-					m_mediaVsyncCount = 2;
-				}
-				// if still to slow, then
-				if (targetFrameTime > maxFrameTime)
-				{
-					targetFrameTime /= 1.5;	 // triple the frame rate
-					m_mediaVsyncCount = 3;
-				}
+					m_vTotalFixedApproved = false;
 
-				// don't worry too much about precision here as software loop is sloppy anyway.
-				// compute how much of frame time to sleep by subtracting time running CPU/GPU
-				m_sleepDelay = 1000.0 * (targetFrameTime - avgRunTime);
+					// if we didnt get PresentDuration mode, maybe we got an MPO:
+					m_MPO = false;
+					if (mediaStats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY)
+					{
+						m_MPO = true;
+					}
 
-				// Hopefully set correct duration for this frame by sleeping enough
-				m_frameLog[0]->sleepCounts = getPerfCounts();
-				mySleep(m_sleepDelay);
-			}
+					double avgRunTime;		 // how long the app spends not sleeping
+					m_mediaPresentDuration = 0;	 // indicate to not use PresentDuration model
+
+					if (m_frameCount > 1)
+						avgRunTime = m_totalRunningTime / m_frameCount;
+					else
+						avgRunTime = 0.0013;  // aka 1.3ms
+
+						// apply frame doubling if frame rate is less than EDID reported minimum
+					double targetFrameTime = m_targetFrameTime;
+					double maxFrameTime = 1.001 / m_minFrameRate;  // as repotted by EDID
+					if (targetFrameTime > maxFrameTime)
+					{
+						targetFrameTime /= 2.0;	 // halve the period to double the frame rate
+						m_mediaVsyncCount = 2;
+					}
+					// if still to slow, then
+					if (targetFrameTime > maxFrameTime)
+					{
+						targetFrameTime /= 1.5;	 // triple the frame rate
+						m_mediaVsyncCount = 3;
+					}
+
+					// don't worry too much about precision here as software loop is sloppy anyway.
+					// compute how much of frame time to sleep by subtracting time running CPU/GPU
+					m_sleepDelay = 1000.0 * (targetFrameTime - avgRunTime);
+
+					// Hopefully set correct duration for this frame by sleeping enough
+					m_frameLog[0]->sleepCounts = getPerfCounts();
+					mySleep(m_sleepDelay);
+				}
 
 			// log when app logic starts on the GPU
 			m_frameLog[0]->updateCounts = getPerfCounts();
@@ -883,7 +884,8 @@ void Game::Tick()
 			m_frameLog[0]->presentCounts = getPerfCounts();
 			// Call Present() to show the new frame
 
-			if (m_mediaPresentDuration != 0)
+			if (m_mediaPresentDuration != 0
+				)
 			{
 				hr = m_deviceResources->Present(m_mediaVsyncCount, DXGI_PRESENT_USE_DURATION);
 			}
