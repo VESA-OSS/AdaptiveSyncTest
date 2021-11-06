@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.960"
+#define versionString L"v0.960Test"
 
 #include "pch.h"
 
