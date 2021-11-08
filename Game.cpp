@@ -118,6 +118,7 @@ void Game::ConstructorInternal()
 	m_g2gFrameRate = 1;	     // flag for default to max                                         5
 	m_g2gCounter = 0;	     // counter for interval of gray periods                            5
 	m_g2gInterval = 16;     // default interval for G2G switching                              5
+	m_brightMode = false;	// if we are using a brighter warmup and G2G                       5
 
 	m_frameDropRateEnum = DropRateEnum::Max;  // default to max                              6
 	m_frameDropGamma = 1.;		      // used to balance brightness in square/random tests            6
@@ -318,6 +319,11 @@ void Game::ToggleSensing()
 	{
 		m_sensing = !m_sensing;
 	}
+}
+
+void Game::ToggleBrightMode()
+{
+	m_brightMode = !m_brightMode;
 }
 
 void Game::ToggleAutoG2G()
@@ -860,6 +866,12 @@ void Game::Tick()
 					{
 						targetFrameTime /= 1.5;	 // triple the frame rate
 						m_mediaVsyncCount = 3;
+					}
+					// if still to slow, then
+					if (targetFrameTime > maxFrameTime)
+					{
+						targetFrameTime /= 1.333333333;	 // quadruple the frame rate
+						m_mediaVsyncCount = 4;
 					}
 
 					// don't worry too much about precision here as software loop is sloppy anyway.
@@ -1466,7 +1478,9 @@ void Game::Update()
 	case TestPattern::WarmUp:  // W
 		if (m_newTestSelected)
 		{
-			m_testTimeRemainingSec = 60.0f * 60.0f;  // 60 minutes
+			m_testTimeRemainingSec =     60.0f * 60.0f;  // 60 minutes
+			if ( m_brightMode )
+				m_testTimeRemainingSec = 20.0f * 60.0f;  // 20 minutes
 		}
 		else
 		{
@@ -1979,16 +1993,17 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
 	text << L"ALT-ENTER: Toggle fullscreen: all measurements should be made in fullscreen\n";
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
-	text << L"NUMBER KEY:   Jump to test number\n";
-	text << L"SPACE:        Hide text and target circle\n";
-	text << L"P, Pause:               Pause\n";
-	text << L"R:        Reset sync timer\n";
-	text << L"C:        Start 60s cool-down\n";
-	text << L"W:        Start 60min warm-up\n";
+	text << L"NUMBER KEY:      Jump to test number\n";
+	text << L"SPACE:                 Hide text and target circle\n";
+	text << L"P, Pause:              Pause\n";
+	text << L"R:           Reset sync timer\n";
+	text << L"C:           Start 60s cool-down\n";
+	text << L"W:          Start 60min warm-up\n";
+	text << L"B:           Enable brighter warm-up & G2G\n";
 	text << L"ALT-ENTER:    Toggle fullscreen\n";
-	text << L"ESCAPE:       Exit fullscreen\n";
-	text << L"ALT-F4:       Exit app\n";
-	text << L"\nCopyright (C) VESA\nLast updated: " << __DATE__;
+	text << L"ESCAPE:          Exit fullscreen\n";
+	text << L"ALT-F4:           Exit app\n";
+	text << L"\nCopyright (C) VESA  - Last updated: " << __DATE__;
 
 	RenderText(ctx, m_largeFormat.Get(), text.str(), m_largeTextRect);
 
@@ -2550,7 +2565,7 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
 		title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
 		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
 		title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
 		double avgFrameTime = m_totalFrameTime / m_frameCount;
 		title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -2736,7 +2751,7 @@ void Game::GenerateTestPattern_DisplayLatency(ID2D1DeviceContext2* ctx)	 // ****
 			title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
 			title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
 			title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-			title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms";
+			title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 			title << L"                                                          avg     var\n";
 
 			int numCols = 10;
@@ -2941,12 +2956,16 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 	{
 		// should turn out to be 520/1023 in PQ/2084 code
 		float nits = 40.0f;
+		if (m_brightMode)
+			nits = 80.0f;
 		c = nitstoCCCS(nits);
 	}
 	else  // SDR
 	{
 		// per CTS section 10.2 - changed at meeting on 2021-06-22 to 40nits like other test background
 		float sRGBval = 127.f;		  // in 8-bit encoding
+		if (m_brightMode)
+			sRGBval = 255.f;
 		c = sRGBval / 255.f;  // norm
 	}
 	ComPtr<ID2D1SolidColorBrush> surroundBrush;	 // background
@@ -2989,7 +3008,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 		title << "\nTarget:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
 		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
 		title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
 		double avgFrameTime = m_totalFrameTime / m_frameCount;
 		title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -3277,7 +3296,7 @@ void Game::GenerateTestPattern_FrameDrop(ID2D1DeviceContext2* ctx)  //**********
 		title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
 		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
 		title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
 		double avgFrameTime = m_totalFrameTime / m_frameCount;
 		title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -3802,7 +3821,7 @@ void Game::GenerateTestPattern_Tearing(ID2D1DeviceContext2* ctx)  // ***********
 		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
 
 		title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
-		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms\n";
+		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 
 		double avgFrameTime = m_totalFrameTime / m_frameCount;
 		title << "Average: " << setw(10) << setprecision(3) << 1.0 / avgFrameTime << L"fps  ";
@@ -3867,12 +3886,16 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)	 // ************
 	if (CheckHDR_On())
 	{
 		nits = 40.0f;
+		if (m_brightMode)
+			nits = 80.0f;
 		c = nitstoCCCS(nits);
 	}
 	else
 	{
 		// code value to attain 40nits on an SDR monitor with 200nit page white
 		sRGBval = 127;
+		if (m_brightMode)
+			sRGBval = 255;
 		c = sRGBval / 255.f;  // norm
 	}
 
