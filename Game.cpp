@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.960"
+#define versionString L"v0.961"
 
 #include "pch.h"
 
@@ -300,12 +300,15 @@ void Game::ToggleLogging()
 	}
 }
 
-void Game::ToggleMargin()
+void Game::ChangeMargin( INT32 increment )
 {
-	if (m_frameRateMargin > 0.015625)  // 1/64
-		m_frameRateMargin = 0.0;
-	else if (m_frameRateMargin <= 0.015625)
-		m_frameRateMargin = 2.0;
+	if (increment > 0)
+		m_frameRateMargin += 0.1;
+	else
+	if ( increment < 0)
+		m_frameRateMargin -= 0.1;
+
+	m_frameRateMargin = clamp(m_frameRateMargin, 0.0, 2.0);
 }
 
 void Game::TogglePause()
@@ -1119,18 +1122,18 @@ void Game::UpdateFlickerVariable()
 		if (m_waveUp)
 		{
 			m_targetFrameRate += 1;
-			if (m_targetFrameRate > maxFrameRate)
+			if (m_targetFrameRate > maxFrameRate - 2 * m_frameRateMargin)
 			{
-				m_targetFrameRate = maxFrameRate;
+				m_targetFrameRate = maxFrameRate - 2 * m_frameRateMargin;
 				m_waveUp = false;
 			}
 		}
 		else
 		{
 			m_targetFrameRate -= 1;
-			if (m_targetFrameRate < minFrameRate)
+			if (m_targetFrameRate < minFrameRate + m_frameRateMargin)
 			{
-				m_targetFrameRate = minFrameRate;
+				m_targetFrameRate = minFrameRate + m_frameRateMargin;
 				m_waveUp = true;
 			}
 		}
@@ -2563,7 +2566,8 @@ void Game::GenerateTestPattern_FlickerVariable(ID2D1DeviceContext2* ctx)  //****
 
 		title << fixed;
 		title << "Target:  " << setw(10) << setprecision(3) << m_targetFrameRate << L"fps  ";
-		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms\n";
+		title << setw(10) << setprecision(5) << 1.0f / m_targetFrameRate * 1000.f << L"ms  " << " Margin: " << setprecision(1) << m_frameRateMargin << L"fps\n";
+
 		title << "Current: " << setw(10) << setprecision(3) << 1.0 / m_frameTime << L"fps  ";
 		title << setw(10) << setprecision(5) << m_frameTime * 1000.f << L"ms  " << m_mediaVsyncCount << L"X\n";
 

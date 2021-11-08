@@ -224,11 +224,11 @@ class Game : public DX::IDeviceNotify
     void ChangeG2GFromIndex(INT32 increment);
     void ChangeG2GToIndex(INT32 increment);
     void ChangeG2GInterval(INT32 increment);
+    void ChangeMargin(INT32 increment);
     void StartTestPattern(void);
     enum VTotalMode GetVTotalMode(void);
     void            ToggleVTotalMode(void);
     void            ToggleLogging(void);
-    void            ToggleMargin(void);
     void            TogglePause(void);
     void            ToggleSensing(void);
     void            ToggleBrightMode(void);
