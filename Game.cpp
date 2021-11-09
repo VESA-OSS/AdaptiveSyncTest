@@ -9,7 +9,7 @@
 //
 //*********************************************************
 
-#define versionString L"v0.961"
+#define versionString L"v0.962"
 
 #include "pch.h"
 
@@ -800,17 +800,8 @@ void Game::Tick()
 							static_cast<uint32_t>(m_mediaPresentDuration), &closestSmallerDuration, &closestLargerDuration);
 
 						// Check that one of the neighboring Durations matches our goal
-						if (hr == S_OK && (closestLargerDuration != 0 || closestSmallerDuration != 0))
+						if (hr == S_OK && (m_mediaPresentDuration == closestLargerDuration || m_mediaPresentDuration == closestSmallerDuration))
 						{
-							if ((m_mediaPresentDuration - closestSmallerDuration) < (closestLargerDuration - m_mediaPresentDuration))
-							{
-								m_mediaPresentDuration = closestSmallerDuration;
-							}
-							else
-							{
-								m_mediaPresentDuration = closestLargerDuration;
-							}
-
 							// then the rate is valid and we can set it
 							hr = scMedia->SetPresentDuration(static_cast<uint32_t>(m_mediaPresentDuration));
 							if (hr != S_OK)
@@ -818,17 +809,17 @@ void Game::Tick()
 								m_mediaPresentDuration = 0;
 							}
 						}
+						else
+						{
+							// PresentDuration is not to be used
+							m_mediaPresentDuration = 0;
+						}
 				}
 			}
 			else
 			{
 				// PresentDuration is not to be used
 				m_mediaPresentDuration = 0;
-
-				if (m_vTotalFixedApproved)
-				{
-					scMedia->SetPresentDuration(0);
-				}
 			}
 
 				hr = scMedia->GetFrameStatisticsMedia(&mediaStats);
@@ -843,6 +834,11 @@ void Game::Tick()
 
 					// if we didnt get PresentDuration mode, maybe we got an MPO:
 					m_MPO = false;
+					if (m_vTotalFixedSupported && m_vTotalFixedApproved)
+					{
+						scMedia->SetPresentDuration(0);
+					}
+
 					if (mediaStats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY)
 					{
 						m_MPO = true;
