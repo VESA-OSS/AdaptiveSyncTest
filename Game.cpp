@@ -1839,6 +1839,9 @@ void Game::UpdateDxgiRefreshRatesInfo()
 		&closestLargerPresentDuration));
 	m_minDuration = closestLargerPresentDuration;
 
+	if (m_minDuration == 0 && m_displayFrequency != 0) // if CheckPresentDurationSupport fails to set m_minDuration, try to set with m_displayFrequency instead
+		m_minDuration = (10000000)/m_displayFrequency;
+		
 	// this may need to be adjusted based on the VESA criteria.  TODO
 	if (m_minDuration > 0 && m_maxDuration > 0)  // if Durations are supported,
 	{
