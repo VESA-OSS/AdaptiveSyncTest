@@ -1839,7 +1839,8 @@ void Game::UpdateDxgiRefreshRatesInfo()
 		&closestLargerPresentDuration));
 	m_minDuration = closestLargerPresentDuration;
 
-	if (m_minDuration == 0 && m_displayFrequency != 0) // if CheckPresentDurationSupport fails to set m_minDuration, try to set with m_displayFrequency instead
+	// if CheckPresentDurationSupport fails to set m_minDuration, try to set with m_displayFrequency instead
+	if (m_minDuration == 0 && m_displayFrequency != 0)
 		m_minDuration = (10000000)/m_displayFrequency;
 		
 	// this may need to be adjusted based on the VESA criteria.  TODO
@@ -1847,8 +1848,8 @@ void Game::UpdateDxgiRefreshRatesInfo()
 	{
 		m_vTotalFixedSupported = true;
 
-		m_minFrameRate = 10000000.f / m_maxDuration;  // then these should be non-zero
-		m_maxFrameRate = 10000000.f / m_minDuration;
+		m_minFrameRate = 10000000.0 / m_maxDuration;  // then these should be non-zero
+		m_maxFrameRate = 10000000.0 / m_minDuration;
 	}
 
 	// initialize those scenes that should default to max frame rate
@@ -1996,12 +1997,13 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
 	text << L"->, PAGE DN:       Move to next test\n";
 	text << L"<-, PAGE UP:        Move to previous test\n";
 	text << L"NUMBER KEY:      Jump to test number\n";
-	text << L"SPACE:                 Hide text and target circle\n";
-	text << L"P, Pause:              Pause\n";
-	text << L"R:           Reset sync timer\n";
+	text << L"SPACE:                 Hide on-screen text\n";
+	text << L"P, Pause:              Pause animation\n";
+	text << L"R:           Reset stats counters\n";
 	text << L"C:           Start 60s cool-down\n";
 	text << L"W:          Start 60min warm-up\n";
 	text << L"B:           Enable brighter warm-up & G2G\n";
+	text << L"M,N       Add safety margin to range\n";
 	text << L"ALT-ENTER:    Toggle fullscreen\n";
 	text << L"ESCAPE:          Exit fullscreen\n";
 	text << L"ALT-F4:           Exit app\n";
