@@ -1094,6 +1094,9 @@ int getSquareWaveFrameCount( double rate )
 
 	int count = (hiCount - loCount) * rand() / RAND_MAX + loCount;
 
+	if (count & 0x01)		// if odd
+		count++;			// make even
+
 	return count;
 }
 
@@ -1878,7 +1881,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
 	// set up default switch interval based on max frame rate.
 	m_g2gInterval = static_cast<int32_t>(0.25 * m_maxFrameRate);  // reset counter to take 250ms at ANY frame rate
 	if (m_g2gInterval & 0x01)					  // if it is odd,
-		m_g2gInterval++;					  // add one to make it even
+		m_g2gInterval++;						// add one to make it even
 
 
 	if (m_motionBlurFrameRate < 5)  // 8
