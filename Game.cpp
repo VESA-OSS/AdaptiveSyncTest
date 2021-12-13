@@ -22,6 +22,7 @@
 #include "Game.h"
 
 #define BRIGHTNESS_SLIDER_FACTOR (m_rawOutDesc.MaxLuminance / m_outputDesc.MaxLuminance)
+#define G2G_LUMINANCE_BAR (995.f)
 
 //using namespace concurrency;
 
@@ -100,36 +101,36 @@ void Game::ConstructorInternal()
 	m_mediaRateIndex = 0;  // select between 60, 90, 120, 180, 240Hz for Jitter               5
 
 	m_latencyTestFrameRate = 1;	     // Flag for default to max                                 4
-	m_sensorConnected = false;  //
-	m_sensorNits = 27.0f;  // threshold for detection by sensor in nits               4
+	m_sensorConnected = false;		//
+	m_sensorNits = 27.0f;			// threshold for detection by sensor in nits               4
 	m_sensing = false;  //
-	m_flash = false;  // whether we are flashing the photocell this frame        4
-	m_lastFlash = false;  // whether last frame was a flash                          4
-	m_lastLastFlash = false;  // whether last frame was a flash                          4
-	ResetSensorStats();		     // initialize the sensor tracking data                     4
+	m_flash = false;				// whether we are flashing the photocell this frame        4
+	m_lastFlash = false;			// whether last frame was a flash                          4
+	m_lastLastFlash = false;		// whether last frame was a flash                          4
+	ResetSensorStats();				// initialize the sensor tracking data                     4
 	AutoResetAverageStats();	     // initialize the frame timing data
-	m_avgInputTime = 0.006;	     // hard coded at 6ms until dongle can drive input
-#define USB_TIME (0.002)	     // time for 1 round trip on USB wire       2ms?            4
+	m_avgInputTime = 0.006;			// hard coded at 6ms until dongle can drive input
+#define USB_TIME (0.002)			// time for 1 round trip on USB wire       2ms?            4
 
-	m_autoG2G = false;  // if we are in automatic sequence mode                            5
-	m_g2gFrom = true;   // start with "From" color                                         5
-	m_g2gFromIndex = 0;	     // subtest for Gray To Gray test                                   5
-	m_g2gToIndex = 0;	     // subtest for Gray To Gray test                                   5
-	m_g2gFrameRate = 1;	     // flag for default to max                                         5
-	m_g2gCounter = 0;	     // counter for interval of gray periods                            5
+	m_autoG2G = false;		// if we are in automatic sequence mode                            5
+	m_g2gFrom = true;		// start with "From" color                                         5
+	m_g2gFromIndex = 0;	    // subtest for Gray To Gray test                                   5
+	m_g2gToIndex = 0;	    // subtest for Gray To Gray test                                   5
+	m_g2gFrameRate = 1;	    // flag for default to max                                         5
+	m_g2gCounter = 0;	    // counter for interval of gray periods                            5
 	m_g2gInterval = 16;     // default interval for G2G switching                              5
-	m_brightMode = false;	// if we are using a brighter warmup and G2G                       5
+	m_brightWarmup = false;	// if we are using a brighter warmup and G2G                       5
 
-	m_frameDropRateEnum = DropRateEnum::Max;  // default to max                              6
-	m_frameDropGamma = 1.;		      // used to balance brightness in square/random tests            6
+	m_frameDropRateEnum = DropRateEnum::Max;	// default to max                              6
+	m_frameDropGamma = 1.;	   // used to balance brightness in square/random tests            6
 
-	m_frameLockRateIndex = 0;		      // select sutbtest for frameDrop test          7
-	m_MotionBlurIndex = maxMotionBlurs;  // start with frame fraction 100%              8
-	m_motionBlurFrameRate = 60.;	      //                                             8
-	m_judderTestFrameRate = 1.;	      // flag for default to max                     9
-	m_fAngle = 0;		      // angle of object moving around screen       8,9
-	m_tearingTestFrameRate = 1;		      // flag for default to max                     0
-	m_sweepPos = 0;		      // position of bar in Tearing test             0
+	m_frameLockRateIndex = 0;				// select sutbtest for frameDrop test          7
+	m_MotionBlurIndex = maxMotionBlurs;		// start with frame fraction 100%              8
+	m_motionBlurFrameRate = 60.;			//                                             8
+	m_judderTestFrameRate = 1.;				// flag for default to max                     9
+	m_fAngle = 0;							// angle of object moving around screen       8,9
+	m_tearingTestFrameRate = 1;				// flag for default to max                     0
+	m_sweepPos = 0;							// position of bar in Tearing test             0
 
 	m_targetFrameRate = 60.f;
 	m_frameTime = 0.016667;
@@ -322,11 +323,6 @@ void Game::ToggleSensing()
 	{
 		m_sensing = !m_sensing;
 	}
-}
-
-void Game::ToggleBrightMode()
-{
-	m_brightMode = !m_brightMode;
 }
 
 void Game::ToggleAutoG2G()
@@ -1478,7 +1474,7 @@ void Game::Update()
 		if (m_newTestSelected)
 		{
 			m_testTimeRemainingSec =     60.0f * 60.0f;  // 60 minutes
-			if ( m_brightMode )
+			if (m_brightWarmup)
 				m_testTimeRemainingSec = 20.0f * 60.0f;  // 20 minutes
 		}
 		else
@@ -2001,7 +1997,8 @@ void Game::GenerateTestPattern_StartOfTest(ID2D1DeviceContext2* ctx)
 	text << L"P, Pause:              Pause animation\n";
 	text << L"R:           Reset stats counters\n";
 	text << L"C:           Start 60s cool-down\n";
-	text << L"W:          Start 60min warm-up\n";
+	text << L"w:          Start 60min warm-up at med gray\n";
+	text << L"W:         Start 20min warm-up at full White\n";
 	text << L"B:           Enable brighter warm-up & G2G\n";
 	text << L"M,N       Add safety margin to range\n";
 	text << L"ALT-ENTER:    Toggle fullscreen\n";
@@ -2961,7 +2958,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 	{
 		// should turn out to be 520/1023 in PQ/2084 code
 		float nits = 40.0f;
-		if (m_brightMode)
+		if (m_rawOutDesc.MaxLuminance > G2G_LUMINANCE_BAR)	// if panel is brighter than 1000 nits
 			nits = 80.0f;
 		c = nitstoCCCS(nits);
 	}
@@ -2969,7 +2966,7 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 	{
 		// per CTS section 10.2 - changed at meeting on 2021-06-22 to 40nits like other test background
 		float sRGBval = 127.f;		  // in 8-bit encoding
-		if (m_brightMode)
+		if (m_rawOutDesc.MaxLuminance > G2G_LUMINANCE_BAR)	// if panel is brighter than 1000 nits
 			sRGBval = 255.f;
 		c = sRGBval / 255.f;  // norm
 	}
@@ -3891,7 +3888,7 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)	 // ************
 	if (CheckHDR_On())
 	{
 		nits = 40.0f;
-		if (m_brightMode)
+		if (m_brightWarmup)
 			nits = 80.0f;
 		c = nitstoCCCS(nits);
 	}
@@ -3899,7 +3896,7 @@ void Game::GenerateTestPattern_WarmUp(ID2D1DeviceContext2* ctx)	 // ************
 	{
 		// code value to attain 40nits on an SDR monitor with 200nit page white
 		sRGBval = 127;
-		if (m_brightMode)
+		if (m_brightWarmup)
 			sRGBval = 255;
 		c = sRGBval / 255.f;  // norm
 	}
@@ -4367,6 +4364,7 @@ void Game::SetTestPattern(TestPattern testPattern)
 		if (TestPattern::Cooldown >= testPattern)
 		{
 			m_currentTest = testPattern;
+			m_brightWarmup = m_shiftKey;
 		}
 	}
 

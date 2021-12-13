@@ -231,7 +231,7 @@ class Game : public DX::IDeviceNotify
     void            ToggleLogging(void);
     void            TogglePause(void);
     void            ToggleSensing(void);
-    void            ToggleBrightMode(void);
+//  void            ToggleBrightMode(void);
     void            ToggleAutoG2G(void);
     void            ResetCurrentStats(void);  // reset whichever stats are currently in use
     void            ReconnectSensor(void);
@@ -444,7 +444,7 @@ class Game : public DX::IDeviceNotify
     INT32  m_g2gInterval;           // number of frames to hold between switches        5
     bool   m_autoG2G;               // whether we are doing the automatic G2G Sequence  5
     INT32  m_g2gCounter;            // counter for g2g interval                         5
-    bool   m_brightMode;            // if we are using a brighter warmup and G2G        5
+    bool   m_brightWarmup;          // if we are using a brighter warmup screen        5
 
     DropRateEnum m_frameDropRateEnum;  // select frame rate in frame drop test          6
     bool   m_bitTable[32][32];          // table to randomize frame durations           6
