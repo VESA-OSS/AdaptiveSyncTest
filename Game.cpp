@@ -1086,6 +1086,18 @@ void Game::UpdateFlickerConstant()
 	m_targetFrameTime = 1.0 / m_targetFrameRate;
 }
 
+int getSquareWaveFrameCount( double rate )
+{
+	double maxDuration = 0.25f;		// 500msec
+	int loCount = 4;
+	int hiCount = (int) round( maxDuration * rate);
+
+	int count = (hiCount - loCount) * rand() / RAND_MAX + loCount;
+
+	return count;
+}
+
+
 // compute frame rate for this Flicker test with variable frame rate:                                       3
 void Game::UpdateFlickerVariable()
 {
@@ -1144,7 +1156,7 @@ void Game::UpdateFlickerVariable()
 		if (m_waveCounter <= 0)
 		{
 			m_waveUp = !m_waveUp;	   // toggle to wave down
-			m_waveCounter = SQUARE_COUNT;  // reset counter
+			m_waveCounter = getSquareWaveFrameCount( m_waveUp ? maxFrameRate : minFrameRate ) ;  // reset counter
 		}
 
 		// guarantee frame times are not outside the limits reported by DisplayID 2.1
