@@ -1086,11 +1086,23 @@ void Game::UpdateFlickerConstant()
 	m_targetFrameTime = 1.0 / m_targetFrameRate;
 }
 
+// routint to compute number of frames of square wave based on current frame rate
 int getSquareWaveFrameCount( double rate )
 {
-	double maxDuration = 0.25f;		// 500msec
+	double maxDuration = 0.250f;		// 250msec
+	int count = (int)round(maxDuration * rate);
+
+	if (count & 0x01)		// if odd
+		count++;			// make even
+
+	return count;
+}
+
+int getSquareWaveFrameCountRandom(double rate)
+{
+	double maxDuration = 0.250f;		// 250msec
 	int loCount = 4;
-	int hiCount = (int) round( maxDuration * rate);
+	int hiCount = (int)round(maxDuration * rate);
 
 	int count = (hiCount - loCount) * rand() / RAND_MAX + loCount;
 
@@ -1099,7 +1111,6 @@ int getSquareWaveFrameCount( double rate )
 
 	return count;
 }
-
 
 // compute frame rate for this Flicker test with variable frame rate:                                       3
 void Game::UpdateFlickerVariable()
