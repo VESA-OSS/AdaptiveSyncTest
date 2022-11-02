@@ -100,7 +100,7 @@ class Game : public DX::IDeviceNotify
     double mediaRefreshRates[numMediaRates]     = { 23.976024, 24.0, 25.0, 29.970030, 30.0, 47.952048, 48.0, 50.0, 59.940060, 60.0 };
     UINT   mediaPresentDurations[numMediaRates] = { 417083, 416666, 400000, 333666, 333333, 208541, 208333, 200000, 166833, 166666 };
 
-#define numGtGValues 5  // number of levels in the G2G tests                            5
+int numGtGValues; // number of levels in the G2G tests                            5
 
 #define numFrameDropRates 5  // number of frame rates in the FrameDrop test                  6
     //  float frameDropRates[numFrameDropRates] = { 24., 30.f, 48.f, 60.f, 90.f, 120.f, 180.f, 240.f };
@@ -232,6 +232,7 @@ class Game : public DX::IDeviceNotify
     void            TogglePause(void);
     void            ToggleSensing(void);
 //  void            ToggleBrightMode(void);
+    void ToggleG2gPattern5x5Or9x9();
     void            ToggleAutoG2G(void);
     void            ResetCurrentStats(void);  // reset whichever stats are currently in use
     void            ReconnectSensor(void);
@@ -445,6 +446,8 @@ class Game : public DX::IDeviceNotify
     bool   m_autoG2G;               // whether we are doing the automatic G2G Sequence  5
     INT32  m_g2gCounter;            // counter for g2g interval                         5
     bool   m_brightWarmup;          // if we are using a brighter warmup screen        5
+    bool m_toggleG2gPattern5x5Or9x9;//toggle between 5x5 and 9x9 patterns false for 5x5 and is default, true for 9x9 patterns 
+    //int m_g2gSpecialCounter;      //Special conter to render 5x5 pattern first then move to 9x9 pattern 
 
     DropRateEnum m_frameDropRateEnum;  // select frame rate in frame drop test          6
     bool   m_bitTable[32][32];          // table to randomize frame durations           6
@@ -470,8 +473,10 @@ class Game : public DX::IDeviceNotify
     ColorGamut              m_MetadataGamut;
 
     char   m_logFileName[1024];  // name of current log file
+    char   m_autoG2GLogFile[1024];
     UINT32 m_fileCounter;        // number of next unique file name
     FILE*  m_logFile;            // handle of file where we dump the traces to
+    FILE*  m_logfile_AutoG2G;
     double m_logTime;            // wall clock time since start of logging
     double m_lastLogTime;        // wall clock time one frame ago...
 

@@ -9,7 +9,8 @@
 //
 //*********************************************************
 
-#define versionString L"v0.962"
+#define versionString L"v0.970"
+#pragma once
 
 #include "pch.h"
 
@@ -110,7 +111,7 @@ void Game::ConstructorInternal()
 	ResetSensorStats();				// initialize the sensor tracking data                     4
 	AutoResetAverageStats();	     // initialize the frame timing data
 	m_avgInputTime = 0.006;			// hard coded at 6ms until dongle can drive input
-#define USB_TIME (0.002)			// time for 1 round trip on USB wire       2ms?            4
+	#define USB_TIME (0.002)		// time for 1 round trip on USB wire       2ms?            4
 
 	m_autoG2G = false;		// if we are in automatic sequence mode                            5
 	m_g2gFrom = true;		// start with "From" color                                         5
@@ -119,6 +120,8 @@ void Game::ConstructorInternal()
 	m_g2gFrameRate = 1;	    // flag for default to max                                         5
 	m_g2gCounter = 0;	    // counter for interval of gray periods                            5
 	m_g2gInterval = 16;     // default interval for G2G switching                              5
+	numGtGValues  = 5;      //default 5x5 post toggleing 9x9 
+	m_toggleG2gPattern5x5Or9x9 = false;
 	m_brightWarmup = false;	// if we are using a brighter warmup and G2G                       5
 
 	m_frameDropRateEnum = DropRateEnum::Max;	// default to max                              6
@@ -221,6 +224,21 @@ void Game::Initialize(HWND window, int width, int height)
 	CreateWindowSizeDependentResources();
 }
 
+void Game::ToggleG2gPattern5x5Or9x9()
+{
+	if (!m_toggleG2gPattern5x5Or9x9)    //value of m_toggleG2gPattern5x5Or9x9 true => 9x9 pattern false=>5x5 patter
+	{
+		m_toggleG2gPattern5x5Or9x9 = true;
+		numGtGValues               = 9;
+
+	}
+	else
+	{
+		m_toggleG2gPattern5x5Or9x9 = false;
+		numGtGValues               = 5;
+	}
+}
+
 enum Game::VTotalMode Game::GetVTotalMode()
 {
 	return m_vTotalModeRequested;
@@ -265,6 +283,10 @@ void Game::ToggleLogging()
 			break;
 		case TestPattern::GrayToGray:  //  5
 			sprintf_s(m_logFileName, 999, "AdaptSyncTest5_GrayToGray%03d.csv", m_fileCounter);
+			if (m_autoG2G)
+			{
+				sprintf_s(m_autoG2GLogFile, 999, "TimeMarkerGrayToGray%03d.csv", m_fileCounter);
+			}
 			break;
 		case TestPattern::FrameDrop:  //  6
 			sprintf_s(m_logFileName, 999, "AdaptSyncTest6_Framedrop%03d.csv", m_fileCounter);
@@ -292,11 +314,20 @@ void Game::ToggleLogging()
 		fprintf_s(m_logFile, "Time, Mode, Target, Current, FrmStats, Brightness\n");
 		m_logTime = 0;
 		m_lastLogTime = 0;
+		if (m_autoG2G)
+		{
+			err = fopen_s(&m_logfile_AutoG2G, m_autoG2GLogFile, "w");
+			// fprintf_s(m_logfile_AutoG2G, "Mid Timestamp, Color, Frame Number, Total Frames\n");
+		}
 		m_logging = true;
 	}
 	else
 	{
 		fclose(m_logFile);
+		if (m_autoG2G)
+		{
+			fclose(m_logfile_AutoG2G);
+		}
 		m_logging = false;
 	}
 }
@@ -1259,24 +1290,61 @@ float Game::GrayToGrayValue(INT32 index)
 	}
 	else  // HDR case:
 	{
-		switch (index)
+		if (numGtGValues == 5) // 5x5 with HDR ON 
 		{
-		case 0:
-			nits = 0.000000f;
-			break;
-		case 1:
-			nits = 0.047366f * m_outputDesc.MaxLuminance;
-			break;
-		case 2:
-			nits = 0.217638f * m_outputDesc.MaxLuminance;
-			break;
-		case 3:
-			nits = 0.531049f * m_outputDesc.MaxLuminance;
-			break;
-		case 4:
-			nits = 1.000000f * m_outputDesc.MaxLuminance;
-			break;
+			switch (index)
+			{
+				case 0:
+					nits = 0.000000f;
+					break;               
+				case 1:
+					nits = 0.047366f * m_outputDesc.MaxLuminance;
+					break;               
+				case 2:
+					nits = 0.217638f * m_outputDesc.MaxLuminance;
+					break;               
+				case 3:
+					nits = 0.531049f * m_outputDesc.MaxLuminance;
+					break;               
+				case 4:
+					nits = 1.000000f * m_outputDesc.MaxLuminance;
+					break;
+			}
 		}
+		else if (numGtGValues == 9) // 9x9 with HDR ON
+		{
+			switch (index)
+			{
+				case 0:
+					nits = 0.000000f;
+					break;
+				case 1:
+					nits = 0.023683f * m_outputDesc.MaxLuminance;
+					break;
+				case 2:
+					nits = 0.047366f * m_outputDesc.MaxLuminance;
+					break;
+				case 3:
+					nits = 0.132502f * m_outputDesc.MaxLuminance;
+					break;
+				case 4:
+					nits = 0.217638f * m_outputDesc.MaxLuminance;
+					break;
+				case 5:
+					nits = 0.3743435f * m_outputDesc.MaxLuminance;
+					break;
+				case 6:
+					nits = 0.531049f * m_outputDesc.MaxLuminance;
+					break;
+				case 7:
+					nits = 0.7655245f * m_outputDesc.MaxLuminance;
+					break;
+				case 8:
+					nits = 1.000000f * m_outputDesc.MaxLuminance;
+					break;
+			}
+		}
+
 		c = nitstoCCCS(nits);
 	}
 	return c;
@@ -1296,16 +1364,27 @@ void Game::UpdateGrayToGray()
 
 	if (m_autoG2G)  // if we are in auto-sequence
 	{
-		m_targetFrameRate = maxFrameRate;  // per CTS
+		numGtGValues = 5;   //default 5 for 9x9 also, start 9x9 post 20 states of 5x5 render 
+		/*if (m_g2gSpecialCounter < 0 && m_toggleG2gPattern5x5Or9x9 == true)
+		{
+			numGtGValues = 9;
+		}*/
+		if (m_toggleG2gPattern5x5Or9x9) //true for 9x9 and false for 5x5
+		{
+			numGtGValues = 9;
+		}
+
+		//m_targetFrameRate = maxFrameRate; // per CTS // removing as per new 1.1 CTS
 		/*
-					update the timer
-					if it has run down, then
-						Toggle the m_from boolean
-						If we are back at true, then
-						Increment the FromIndex
-							if that overflows, increment the ToIndex
-			*/
-			//      m_testTimeRemainingSec -= m_frameTime;
+		update the timer
+		if it has run down, then
+			Toggle the m_from boolean
+			If we are back at true, then
+			Increment the FromIndex
+			if that overflows, increment the ToIndex
+		*/
+		//      m_testTimeRemainingSec -= m_frameTime;
+
 		if (m_g2gCounter <= 0)	// counter ran down, so change something
 		{
 			if (m_g2gFrom)
@@ -1325,11 +1404,25 @@ void Game::UpdateGrayToGray()
 				}
 				m_g2gFrom = true;
 			}
-			if ((m_g2gFromIndex == 4) || (m_g2gFromIndex != m_g2gToIndex))  // skip the diagonal where to and from are same
+
+			if (m_g2gFromIndex == numGtGValues - 1 && m_g2gToIndex == numGtGValues - 1) // when white/255 color is showed twice : show it only for 250ms in stead of making it show at 500ms 
 			{
-				m_g2gCounter = static_cast<int32_t>(0.25 * m_targetFrameRate);	// reset counter to take 250ms at ANY frame rate
-				if (m_g2gCounter & 0x01)					// if it is odd,
-					m_g2gCounter++;						// add one to make it even
+				m_g2gCounter = static_cast<int32_t>(0.125 * m_targetFrameRate); // reset counter to take 250ms at ANY frame rate
+				if (m_g2gCounter & 0x01)                                       // if it is odd,
+				m_g2gCounter++;
+			}
+			else
+			{
+				if (m_g2gCounter == 0 && m_g2gFromIndex == numGtGValues - 2 && m_g2gToIndex == numGtGValues - 1)        //Rest : 255 shown on screen for 500ms
+				{
+					m_g2gCounter = 0;
+				}
+				else if ((m_g2gFromIndex == numGtGValues - 1) || (m_g2gFromIndex != m_g2gToIndex)) // skip the diagonal where to and from are same
+				{
+					m_g2gCounter = static_cast<int32_t>(0.25 * m_targetFrameRate); // reset counter to take 250ms at ANY frame rate
+					if (m_g2gCounter & 0x01)                                       // if it is odd,
+					m_g2gCounter++;                                            // add one to make it even
+				}
 			}
 			//              m_testTimeRemainingSec = 0.250;      //  0.006944444 * 5;
 		}
@@ -1860,6 +1953,7 @@ void Game::UpdateDxgiRefreshRatesInfo()
 		&closestSmallerPresentDuration,
 		&closestLargerPresentDuration));
 	m_minDuration = closestLargerPresentDuration;
+	// m_minDuration = max(closestSmallerPresentDuration, closestLargerPresentDuration); Uncomment to test on older OSes where duration was returned swapped
 
 	// if CheckPresentDurationSupport fails to set m_minDuration, try to set with m_displayFrequency instead
 	if (m_minDuration == 0 && m_displayFrequency != 0)
@@ -3018,6 +3112,9 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 	ctx->FillRectangle(&tenPercentRect, testBrush.Get());
 
 	// Everything below this point should be hidden during actual measurements.
+	m_g2gInterval = static_cast<int32_t>(0.25 * m_targetFrameRate); // reset counter to take 250ms at ANY frame rate
+	if (m_g2gInterval & 0x01)                                       // if it is odd,
+	m_g2gInterval++; 
 	if (m_showExplanatoryText)
 	{
 		std::wstringstream title;
@@ -3050,12 +3147,23 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 		if (m_autoG2G)
 		{
 			title << L"\nAutomatic sequence:\n";
+			title << L"Use 'b' or 'B' to toggle between 5x5 or 9x9 G2G patterns\n";
+			if (m_toggleG2gPattern5x5Or9x9 == false)
+				title << L"Current G2G Pattern: 5x5\n";
+			else
+				title << L"Current G2G Pattern: 9x9\n";
 		}
 		else
 		{
 			title << L"Select 'From' brightness level using the '<' and '>' keys\n";
 			title << L"Select  'To'  brightness level using the '[' and ']' keys\n";
 			title << L"Select the b/w switch interval using the '+' and '-' keys\n";
+			title << L"Change the frame rate using UP and DOWN arrow keys\n";
+			title << L"Use 'b' or 'B' to toggle between 5x5 or 9x9 G2G patterns\n";
+			if (m_toggleG2gPattern5x5Or9x9 == false)
+			title << L"Current G2G Pattern: 5x5\n";
+			else
+			title << L"Current G2G Pattern: 9x9\n";
 		}
 		if (!CheckHDR_On())
 		{
@@ -3086,6 +3194,13 @@ void Game::GenerateTestPattern_GrayToGray(ID2D1DeviceContext2* ctx)  //*********
 			m_frameTime * 1000.,
 			1000. / m_monitorSyncRate,
 			c * 10. + 10.);
+		if (m_autoG2G)
+		{
+			if (m_g2gCounter == (m_g2gInterval / 2))
+			{
+		 		fprintf_s(m_logfile_AutoG2G, "%8.4f\n", m_lastLogTime * 1000.f);
+			}
+		}
 	}
 
 	m_newTestSelected = false;
