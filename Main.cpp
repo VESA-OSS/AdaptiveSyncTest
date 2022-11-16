@@ -392,8 +392,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case 0x41:  // 'A'
             game->ToggleAutoG2G();
             break;
-//      case 0x42:  // 'B'
-//          game->ToggleBrightMode();
+        case 0x42:  // 'B'
+            game->ToggleG2gPattern5x5Or9x9();
             break;
         case 0x43:  // 'C'
             game->SetTestPattern(Game::TestPattern::Cooldown);
