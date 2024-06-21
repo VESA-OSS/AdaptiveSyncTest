@@ -2561,6 +2561,11 @@ void Game::GenerateTestPattern_FlickerConstant(ID2D1DeviceContext2* ctx)  //****
 		title << "Monitor: " << setw(10) << setprecision(3) << m_monitorSyncRate << L"Hz";
 		title << setw(9) << setprecision(1) << m_monitorSyncRate * avgFrameTime << "X\n";
 
+        if (m_targetFrameRate > m_displayFrequency)
+	    {
+	        title << "\nWARNING: Target frame rate is higher than the current maximum display frequency\n";
+	    }
+
 #if 0
 		// display brightness level for this test
 		title << setprecision(0);
