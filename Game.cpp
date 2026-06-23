@@ -214,6 +214,9 @@ void Game::RotateFrameLog()
 // Initialize the Direct3D resources required to run.
 void Game::Initialize(HWND window, int width, int height)
 {
+	CheckTearingSupport();
+	m_deviceResources->SetTearingSupport(m_tearingSupport);
+
 	m_deviceResources->SetWindow(window, width, height);
 	m_deviceResources->CreateDeviceResources();
 	m_deviceResources->SetDpi(96.0f);  // TODO: using default 96 DPI for now

@@ -55,6 +55,7 @@ DX::DeviceResources::DeviceResources(DXGI_FORMAT       backBufferFormat,
     , m_dpi(-1.0f)
     ,  // Require DPI to be explicitly set.
     m_vTotalMode(false)
+    , m_tearingSupport(false)
 {
     UNREFERENCED_PARAMETER(minFeatureLevel);
 
@@ -233,9 +234,7 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         }
         else
         {
-            swapFlags = 0;                  // default is vsync on, not tearing
-//          swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            swapFlags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
         }
         // If the swap chain already exists, resize it.
         HRESULT hr = m_swapChain->ResizeBuffers(m_backBufferCount, backBufferWidth, backBufferHeight, m_backBufferFormat, swapFlags);
@@ -294,9 +293,7 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
         }
         else
         {
-            swapFlags = 0;                  // default is vsync enabled, not tearing
-//          swapFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;  // It is recommended to always use the tearing flag when it is available.
-//          swapChainDesc.Flags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;  TODO make this not hard-coded -then older systems may work
+            swapFlags = m_tearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
         }
         swapChainDesc.Flags = swapFlags;
 
@@ -465,8 +462,13 @@ HRESULT DX::DeviceResources::Present(UINT syncInterval, UINT flags)
     // flag when it is supported, even when presenting in windowed mode.
     // However, this flag cannot be used if the app is in fullscreen mode as a
     // result of calling SetFullscreenState.
-    //  UINT presentFlags = (m_tearingSupport && m_windowedMode) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    HRESULT hr = m_swapChain->Present(syncInterval, flags);
+    UINT presentFlags = flags;
+    if (m_tearingSupport && syncInterval == 0)
+    {
+        presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+    }
+
+    HRESULT hr = m_swapChain->Present(syncInterval, presentFlags);
 
     if (m_d3dContext)
     {

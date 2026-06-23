@@ -50,6 +50,10 @@ namespace DX
         {
             m_vTotalMode = vTotalMode;
         }  // Tell DevResources object when we are requesting v-total Fixed.
+        void SetTearingSupport(bool tearingSupport)
+        {
+            m_tearingSupport = tearingSupport;
+        }
 
         // The size of the render target, in pixels.
         RECT GetOutputSize() const
@@ -185,6 +189,7 @@ namespace DX
         Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> m_d3dAnnotation;
         HANDLE                                            m_frameLatencyHandle;
         BOOL                                              m_vTotalMode;  // True for a FIXED v-total average swapchain
+        bool                                              m_tearingSupport;
 
         // Direct3D rendering objects. Required for 3D.
         Microsoft::WRL::ComPtr<ID3D11Texture2D>        m_renderTarget;
